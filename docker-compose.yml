@@ -9,13 +9,14 @@ services:
       - NODE_ENV=production
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-SkyGuard2026!}
-      - GO2RTC_URL=http://go2rtc:1984
+      - GO2RTC_URL=http://tailscale:1984
       - S3_ENDPOINT=${S3_ENDPOINT:-https://s3api1.skyconnection.id}
       - S3_REGION=${S3_REGION:-us-west-1}
       - S3_BUCKET=${S3_BUCKET:-frigate}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-73IGfrigateTCD0ytq}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-Np6XMltnNIsKzSLDjZzg9umAJGMfx3iKe1gsio3e}
     depends_on:
+      - tailscale
       - go2rtc
     networks:
       - skyguard-network
@@ -27,13 +28,36 @@ services:
       - "traefik.http.routers.skyguard.entrypoints=web,websecure"
       - "traefik.http.services.skyguard.loadbalancer.server.port=3000"
 
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: skyguard-dokploy
+    environment:
+      - TS_USERSPACE=false
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY:-}
+      - TS_EXTRA_ARGS=--accept-routes
+    volumes:
+      - tailscale-data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    networks:
+      - skyguard-network
+
   go2rtc:
     image: alexxit/go2rtc:latest
     restart: unless-stopped
+    network_mode: "service:tailscale"
+    depends_on:
+      - tailscale
     volumes:
       - ./go2rtc.yaml:/config/go2rtc.yaml
-    networks:
-      - skyguard-network
+
+volumes:
+  tailscale-data:
+    driver: local
 
 networks:
   skyguard-network:
