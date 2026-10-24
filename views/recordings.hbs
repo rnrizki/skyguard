@@ -119,8 +119,31 @@
   <!-- Results Section -->
   <div class="results-container">
     <div class="results-header">
-      <h3 id="results-title">Recorded Video Clips</h3>
-      <span id="results-count" class="badge badge-secondary">0 files found</span>
+      <div class="results-title-group">
+        <h3 id="results-title">Recorded Video Clips</h3>
+        <span id="results-count" class="badge badge-secondary">0 files found</span>
+      </div>
+
+      <!-- View Mode Selector (Video Utuh / Sesi vs Segmen 10s) -->
+      <div class="view-mode-toggle">
+        <button type="button" class="view-btn active" data-mode="sessions" id="btn-mode-sessions" title="Tampilkan kejadian & sesi rekaman utuh">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Video Utuh (Kejadian & Sesi)
+        </button>
+        <button type="button" class="view-btn" data-mode="segments" id="btn-mode-segments" title="Tampilkan semua pecahan segmen 10 detik">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+          Segmen 10 Detik
+        </button>
+      </div>
     </div>
 
     <!-- Empty State -->
@@ -150,7 +173,10 @@
   <div class="modal-dialog">
     <div class="modal-header">
       <div class="modal-title-group">
-        <h3 id="modal-video-title">Playback Recording</h3>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <h3 id="modal-video-title">Playback Recording</h3>
+          <span id="modal-segment-counter" class="badge badge-info" style="display:none;">Segmen 1 dari 1</span>
+        </div>
         <p id="modal-video-subtitle">--</p>
       </div>
       <button class="modal-close-btn" onclick="closeVideoModal()">&times;</button>
@@ -171,6 +197,21 @@
         <button class="speed-btn" onclick="setSpeed(2)">2.0x</button>
         <button class="speed-btn" onclick="setSpeed(4)">4.0x</button>
       </div>
+
+      <!-- Continuous Session Playback Navigation -->
+      <div class="session-nav-controls" id="modal-session-nav" style="display: none;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-prev-segment" onclick="playPrevSegment()" title="Segmen Sebelumnya">
+          ⏮ Sebelumnya
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-next-segment" onclick="playNextSegment()" title="Segmen Selanjutnya">
+          Selanjutnya ⏭
+        </button>
+        <label class="auto-next-label" title="Putar segmen berikutnya otomatis tanpa jeda">
+          <input type="checkbox" id="chk-auto-next" checked>
+          <span>Lanjut Otomatis (Tanpa Putus)</span>
+        </label>
+      </div>
+
       <a id="modal-download-btn" href="#" download class="btn btn-secondary btn-sm">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>

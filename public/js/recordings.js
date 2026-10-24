@@ -1,6 +1,6 @@
 /**
  * SkyGuard S3 Recordings Archive Controller
- * Frigate-style Camera Radio Filter, Real Video Frame Thumbnails, and Live S3 Sync Verification
+ * Unified Continuous Event/Session Playback, Frigate Radio Selector, Real Thumbnails & S3 Sync Verification
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -13,6 +13,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultsLoading = document.getElementById('results-loading');
   const clipsGrid = document.getElementById('clips-grid');
   const modal = document.getElementById('video-modal');
+
+  // View Mode Controls (Video Utuh / Sesi vs Segmen 10s)
+  const btnModeSessions = document.getElementById('btn-mode-sessions');
+  const btnModeSegments = document.getElementById('btn-mode-segments');
+  let currentViewMode = 'sessions'; // default to unified continuous video sessions
+  let loadedFiles = [];
+  let loadedSessions = [];
+
+  if (btnModeSessions && btnModeSegments) {
+    btnModeSessions.addEventListener('click', () => {
+      if (currentViewMode !== 'sessions') {
+        currentViewMode = 'sessions';
+        btnModeSessions.classList.add('active');
+        btnModeSegments.classList.remove('active');
+        renderResults();
+      }
+    });
+
+    btnModeSegments.addEventListener('click', () => {
+      if (currentViewMode !== 'segments') {
+        currentViewMode = 'segments';
+        btnModeSegments.classList.add('active');
+        btnModeSessions.classList.remove('active');
+        renderResults();
+      }
+    });
+  }
 
   // Frigate-Style Camera Popover Controls
   const cameraBtn = document.getElementById('camera-dropdown-btn');
@@ -163,15 +190,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
       resultsLoading.style.display = 'none';
 
-      if (!data.files || data.files.length === 0) {
+      loadedFiles = data.files || [];
+      loadedSessions = data.sessions || [];
+
+      if (!loadedFiles.length) {
         resultsEmpty.style.display = 'block';
         resultsEmpty.querySelector('p').textContent = `No video clips found for date ${date} with selected filters.`;
         resultsCount.textContent = '0 clips found';
         return;
       }
 
-      resultsCount.textContent = `${data.files.length} clips found`;
-      renderClips(data.files);
+      renderResults();
       clipsGrid.style.display = 'grid';
 
     } catch (err) {
@@ -180,6 +209,16 @@ document.addEventListener('DOMContentLoaded', () => {
       resultsEmpty.style.display = 'block';
       resultsEmpty.querySelector('p').textContent = `Error loading recordings: ${err.message}`;
       resultsCount.textContent = 'Error';
+    }
+  }
+
+  function renderResults() {
+    if (currentViewMode === 'sessions') {
+      resultsCount.textContent = `${loadedSessions.length} Video Kejadian/Sesi Utuh (${loadedFiles.length} segmen)`;
+      renderSessions(loadedSessions);
+    } else {
+      resultsCount.textContent = `${loadedFiles.length} Segmen 10 Detik`;
+      renderClips(loadedFiles);
     }
   }
 
@@ -222,80 +261,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }, {
-      rootMargin: '150px 0px' // Preload 150px before entering screen
+      rootMargin: '150px 0px'
     });
   }
 
-  function renderClips(files) {
+  // RENDER CONTINUOUS SESSIONS (VIDEO UTUH KEJADIAN)
+  function renderSessions(sessions) {
     clipsGrid.innerHTML = '';
     initVideoObserver();
 
-    files.forEach(file => {
+    sessions.forEach((session, sIdx) => {
       const card = document.createElement('div');
-      card.className = 'clip-card';
+      card.className = `clip-card session-card ${session.totalObjects > 0 ? 'has-event' : ''}`;
 
-      // Camera display name formatting
-      const camName = file.camera.replace(/_/g, ' ').toUpperCase();
+      const camName = session.camera.replace(/_/g, ' ').toUpperCase();
 
-      // Object detection & motion badges
+      // Detection badges
       let badgesHtml = '';
-      if (file.objects && file.objects > 0) {
-        badgesHtml += `<span class="badge-obj" title="${file.objects} object detections">🎯 ${file.objects} obj</span>`;
+      if (session.totalObjects > 0) {
+        badgesHtml += `<span class="badge-obj" title="${session.totalObjects} deteksi objek dalam kejadian ini">🎯 ${session.totalObjects} obj</span>`;
       }
-      if (file.motion && file.motion > 0) {
-        badgesHtml += `<span class="badge-motion" title="Motion detected">⚡ Motion</span>`;
+      if (session.hasMotion) {
+        badgesHtml += `<span class="badge-motion" title="Pergerakan terdeteksi">⚡ Motion</span>`;
       }
 
       // S3 Sync Status Badge
-      const isSynced = file.s3Synced === true;
+      const isSynced = session.s3Synced === true;
       const syncBadgeClass = isSynced ? 'badge-s3-synced' : 'badge-s3-pending';
       const syncBadgeText = isSynced ? '☁️ S3 Synced' : '⏳ Local (Pending S3)';
 
-      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(file.key)}`;
+      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(session.key)}`;
 
       card.innerHTML = `
-        <div class="clip-thumbnail" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+        <div class="clip-thumbnail" onclick="playSession(${sIdx})">
           <div class="clip-aspect-wrapper">
-            <!-- Real Video Frame Thumbnail (Lazy Loaded) -->
             <video class="clip-preview-video" preload="none" muted playsinline data-src="${streamUrl}#t=0.5"></video>
 
-            <!-- Hover Play Overlay -->
             <div class="clip-play-overlay">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
             </div>
 
-            <!-- Top Badges: Detections & S3 Sync Status -->
+            <!-- Top Badges: Detections & S3 Sync -->
             <div class="clip-badges-top">
               <div style="display:flex;gap:4px;align-items:center;">
                 ${badgesHtml}
               </div>
-              <span class="badge-sync ${syncBadgeClass}" data-key="${file.key}">
+              <span class="badge-sync ${syncBadgeClass}">
                 ${syncBadgeText}
               </span>
             </div>
 
-            <!-- Bottom Badges: Time & Duration -->
+            <!-- Bottom Badges: Time Range & Full Duration -->
             <div class="clip-badges-bottom">
-              <span class="clip-badge-time">${file.time}</span>
-              ${file.duration ? `<span class="clip-badge-dur">${file.duration}s</span>` : ''}
+              <span class="clip-badge-time">⏱️ ${session.timeRange}</span>
+              <span class="clip-badge-dur" style="background:#0284c7;color:#fff;font-weight:700;">${session.durationFormatted}</span>
             </div>
           </div>
         </div>
+
         <div class="clip-info">
           <div class="clip-meta">
             <span class="clip-camera">${camName}</span>
-            <span class="clip-size">${file.sizeFormatted}</span>
+            <span class="clip-session-tag">🔗 ${session.segmentCount} Segmen Utuh</span>
           </div>
+
           <div class="clip-actions">
             <div class="clip-btn-group">
-              <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play
+              <button class="btn btn-primary btn-xs" onclick="playSession(${sIdx})">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video Utuh (${session.durationFormatted})
               </button>
-              <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              </a>
             </div>
             <span class="clip-date-tag" title="Tanggal Rekaman">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -304,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <line x1="8" y1="2" x2="8" y2="6"></line>
                 <line x1="3" y1="10" x2="21" y2="10"></line>
               </svg>
-              ${file.date}
+              ${session.date}
             </span>
           </div>
         </div>
@@ -328,7 +364,108 @@ document.addEventListener('DOMContentLoaded', () => {
 
       clipsGrid.appendChild(card);
 
-      // Register video with IntersectionObserver
+      const videoEl = card.querySelector('.clip-preview-video');
+      if (videoEl && videoObserver) {
+        videoObserver.observe(videoEl);
+      }
+    });
+  }
+
+  // RENDER RAW 10-SECOND SEGMENTS
+  function renderClips(files) {
+    clipsGrid.innerHTML = '';
+    initVideoObserver();
+
+    files.forEach(file => {
+      const card = document.createElement('div');
+      card.className = 'clip-card';
+
+      const camName = file.camera.replace(/_/g, ' ').toUpperCase();
+
+      let badgesHtml = '';
+      if (file.objects && file.objects > 0) {
+        badgesHtml += `<span class="badge-obj" title="${file.objects} object detections">🎯 ${file.objects} obj</span>`;
+      }
+      if (file.motion && file.motion > 0) {
+        badgesHtml += `<span class="badge-motion" title="Motion detected">⚡ Motion</span>`;
+      }
+
+      const isSynced = file.s3Synced === true;
+      const syncBadgeClass = isSynced ? 'badge-s3-synced' : 'badge-s3-pending';
+      const syncBadgeText = isSynced ? '☁️ S3 Synced' : '⏳ Local (Pending S3)';
+
+      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(file.key)}`;
+
+      card.innerHTML = `
+        <div class="clip-thumbnail" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+          <div class="clip-aspect-wrapper">
+            <video class="clip-preview-video" preload="none" muted playsinline data-src="${streamUrl}#t=0.5"></video>
+
+            <div class="clip-play-overlay">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+
+            <div class="clip-badges-top">
+              <div style="display:flex;gap:4px;align-items:center;">
+                ${badgesHtml}
+              </div>
+              <span class="badge-sync ${syncBadgeClass}" data-key="${file.key}">
+                ${syncBadgeText}
+              </span>
+            </div>
+
+            <div class="clip-badges-bottom">
+              <span class="clip-badge-time">${file.time}</span>
+              ${file.duration ? `<span class="clip-badge-dur">${file.duration}s</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="clip-info">
+          <div class="clip-meta">
+            <span class="clip-camera">${camName}</span>
+            <span class="clip-size">${file.sizeFormatted}</span>
+          </div>
+          <div class="clip-actions">
+            <div class="clip-btn-group">
+              <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play 10s
+              </button>
+              <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </a>
+            </div>
+            <span class="clip-date-tag" title="Tanggal Rekaman">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              ${file.date}
+            </span>
+          </div>
+        </div>
+      `;
+
+      card.addEventListener('mouseenter', () => {
+        const video = card.querySelector('.clip-preview-video');
+        if (video && video.readyState >= 2) {
+          video.play().catch(() => {});
+        }
+      });
+
+      card.addEventListener('mouseleave', () => {
+        const video = card.querySelector('.clip-preview-video');
+        if (video) {
+          video.pause();
+          video.currentTime = 0.5;
+        }
+      });
+
+      clipsGrid.appendChild(card);
+
       const videoEl = card.querySelector('.clip-preview-video');
       if (videoEl && videoObserver) {
         videoObserver.observe(videoEl);
@@ -342,25 +479,111 @@ document.addEventListener('DOMContentLoaded', () => {
       window.closeVideoModal();
     }
   });
+
+  // Export current session state
+  window._skyguardState = {
+    getSessions: () => loadedSessions,
+    getFiles: () => loadedFiles
+  };
 });
 
-// Modal playback controls
+// CONTINUOUS PLAYLIST ENGINE (PLAYBACK TANPA PUTUS)
+let activeSession = null;
+let activeSegmentIndex = 0;
+
+window.playSession = function(sessionIdx) {
+  const sessions = window._skyguardState ? window._skyguardState.getSessions() : [];
+  const session = sessions[sessionIdx];
+  if (!session || !session.segments || !session.segments.length) return;
+
+  activeSession = session;
+  activeSegmentIndex = 0;
+
+  const modal = document.getElementById('video-modal');
+  const sessionNav = document.getElementById('modal-session-nav');
+  const counter = document.getElementById('modal-segment-counter');
+  if (sessionNav) sessionNav.style.display = 'flex';
+  if (counter) counter.style.display = 'inline-flex';
+
+  playSegmentInSession(0);
+  modal.style.display = 'flex';
+};
+
+function playSegmentInSession(idx) {
+  if (!activeSession || idx < 0 || idx >= activeSession.segments.length) return;
+  activeSegmentIndex = idx;
+  const seg = activeSession.segments[idx];
+  const player = document.getElementById('modal-video-player');
+  const title = document.getElementById('modal-video-title');
+  const subtitle = document.getElementById('modal-video-subtitle');
+  const counter = document.getElementById('modal-segment-counter');
+  const downloadBtn = document.getElementById('modal-download-btn');
+
+  const camName = activeSession.camera.replace(/_/g, ' ').toUpperCase();
+  title.textContent = `${camName} - Kejadian / Sesi Utuh (${activeSession.timeRange})`;
+  subtitle.textContent = `Durasi Total: ${activeSession.durationFormatted} • Ukuran: ${activeSession.sizeFormatted}`;
+  
+  if (counter) {
+    counter.textContent = `Segmen ${idx + 1} / ${activeSession.segments.length} (${seg.time})`;
+  }
+
+  const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(seg.key)}`;
+  downloadBtn.href = streamUrl;
+
+  player.src = streamUrl;
+  player.playbackRate = 1.0;
+  window.resetSpeedButtons();
+
+  player.play().catch(e => console.warn('Modal autoplay blocked:', e));
+
+  // Seamless continuous playback: automatically play next segment when current ends!
+  player.onended = () => {
+    const autoNext = document.getElementById('chk-auto-next');
+    if (!autoNext || autoNext.checked) {
+      if (activeSegmentIndex + 1 < activeSession.segments.length) {
+        playSegmentInSession(activeSegmentIndex + 1);
+      }
+    }
+  };
+}
+
+window.playNextSegment = function() {
+  if (activeSession && activeSegmentIndex + 1 < activeSession.segments.length) {
+    playSegmentInSession(activeSegmentIndex + 1);
+  }
+};
+
+window.playPrevSegment = function() {
+  if (activeSession && activeSegmentIndex - 1 >= 0) {
+    playSegmentInSession(activeSegmentIndex - 1);
+  }
+};
+
+// Single clip playback (10s raw)
 window.playRecording = function(key, camera, timeStr, sizeStr) {
+  activeSession = null;
   const modal = document.getElementById('video-modal');
   const player = document.getElementById('modal-video-player');
   const title = document.getElementById('modal-video-title');
   const subtitle = document.getElementById('modal-video-subtitle');
+  const sessionNav = document.getElementById('modal-session-nav');
+  const counter = document.getElementById('modal-segment-counter');
   const downloadBtn = document.getElementById('modal-download-btn');
+
+  if (sessionNav) sessionNav.style.display = 'none';
+  if (counter) counter.style.display = 'none';
 
   const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(key)}`;
 
-  title.textContent = `${camera} Recording`;
+  title.textContent = `${camera} Recording (10 Detik)`;
   subtitle.textContent = `${timeStr} (${sizeStr})`;
   downloadBtn.href = streamUrl;
 
   player.src = streamUrl;
   player.playbackRate = 1.0;
   window.resetSpeedButtons();
+
+  player.onended = null;
 
   modal.style.display = 'flex';
   player.play().catch(e => console.warn('Modal autoplay blocked:', e));
@@ -369,8 +592,10 @@ window.playRecording = function(key, camera, timeStr, sizeStr) {
 window.closeVideoModal = function() {
   const modal = document.getElementById('video-modal');
   const player = document.getElementById('modal-video-player');
+  activeSession = null;
   if (player) {
     player.pause();
+    player.onended = null;
     player.src = '';
   }
   if (modal) {

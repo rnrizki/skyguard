@@ -144,6 +144,90 @@ function parseRecordingMeta(rawPath, startTime) {
   return { cleanPath: clean, date, hour, filename };
 }
 
+// Helper: Group individual contiguous 10-second segments into continuous video sessions
+function groupIntoSessions(files) {
+  if (!files || !files.length) return [];
+  // Sort ascending by start time
+  const sorted = [...files].sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+  const sessions = [];
+  let current = null;
+
+  for (const f of sorted) {
+    if (!current) {
+      current = {
+        sessionId: `session-${f.id || f.key.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        camera: f.camera,
+        date: f.date,
+        hour: f.hour,
+        startTime: f.startTime,
+        endTime: f.endTime || (f.startTime + (f.duration || 10)),
+        startTimeFormatted: f.time,
+        endTimeFormatted: f.time,
+        totalDuration: f.duration || 10,
+        totalSize: f.size || 0,
+        totalObjects: f.objects || 0,
+        hasMotion: (f.motion || 0) > 0,
+        s3Synced: f.s3Synced !== false,
+        key: f.key,
+        segments: [f]
+      };
+    } else {
+      const gap = (f.startTime || 0) - (current.endTime || 0);
+      // If gap is 15 seconds or less, treat as contiguous continuous video
+      if (gap <= 15 && f.camera === current.camera) {
+        current.segments.push(f);
+        current.endTime = f.endTime || (f.startTime + (f.duration || 10));
+        current.endTimeFormatted = f.time;
+        current.totalDuration += (f.duration || 10);
+        current.totalSize += (f.size || 0);
+        current.totalObjects += (f.objects || 0);
+        if ((f.motion || 0) > 0) current.hasMotion = true;
+        if (f.s3Synced === false) current.s3Synced = false;
+      } else {
+        sessions.push(finalizeSession(current));
+        current = {
+          sessionId: `session-${f.id || f.key.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          camera: f.camera,
+          date: f.date,
+          hour: f.hour,
+          startTime: f.startTime,
+          endTime: f.endTime || (f.startTime + (f.duration || 10)),
+          startTimeFormatted: f.time,
+          endTimeFormatted: f.time,
+          totalDuration: f.duration || 10,
+          totalSize: f.size || 0,
+          totalObjects: f.objects || 0,
+          hasMotion: (f.motion || 0) > 0,
+          s3Synced: f.s3Synced !== false,
+          key: f.key,
+          segments: [f]
+        };
+      }
+    }
+  }
+
+  if (current) {
+    sessions.push(finalizeSession(current));
+  }
+
+  return sessions.reverse();
+}
+
+function finalizeSession(s) {
+  const mins = Math.floor(s.totalDuration / 60);
+  const secs = Math.round(s.totalDuration % 60);
+  const durFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  const sizeMb = (s.totalSize / (1024 * 1024)).toFixed(2) + ' MB';
+
+  return {
+    ...s,
+    durationFormatted: durFormatted,
+    sizeFormatted: sizeMb,
+    segmentCount: s.segments.length,
+    timeRange: `${s.startTimeFormatted} - ${s.endTimeFormatted}`
+  };
+}
+
 // Cameras Definition
 const CAMERAS = [
   { id: 'teras_depan', name: 'Teras Depan', stream: 'teras_depan', location: 'Outdoor Depan' },
@@ -453,7 +537,8 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
       };
     });
 
-    return res.json({ files, count: files.length, source: 'paradedb' });
+    const sessions = groupIntoSessions(files);
+    return res.json({ files, sessions, count: files.length, sessionCount: sessions.length, source: 'paradedb' });
   } catch (err) {
     console.warn('ParadeDB list query failed, falling back to S3:', err.message);
   }
@@ -501,14 +586,41 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
         time: `${keyHour}:${timeStr}`,
         size: item.Size,
         sizeFormatted: formattedSize,
-        lastModified: item.LastModified
+        lastModified: item.LastModified,
+        s3Synced: true
       };
     }).sort((a, b) => b.key.localeCompare(a.key));
 
-    res.json({ files, count: files.length, prefix, source: 's3' });
+    const sessions = groupIntoSessions(files);
+    res.json({ files, sessions, count: files.length, sessionCount: sessions.length, prefix, source: 's3' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to query recordings from S3', details: err.message });
   }
+});
+
+// Dynamic HLS Playlist for Continuous Playback of Sessions
+app.get('/api/recordings/playlist.m3u8', requireAuth, (req, res) => {
+  const { keys } = req.query;
+  let keyList = [];
+  try {
+    keyList = JSON.parse(keys);
+  } catch (_) {
+    keyList = (keys || '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  if (!keyList.length) {
+    return res.status(400).send('No keys provided');
+  }
+
+  let m3u8 = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:12\n#EXT-X-MEDIA-SEQUENCE:0\n';
+  for (const k of keyList) {
+    m3u8 += `#EXTINF:10.0,\n/api/recordings/stream?key=${encodeURIComponent(k)}\n`;
+  }
+  m3u8 += '#EXT-X-ENDLIST\n';
+
+  res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+  res.setHeader('Content-Disposition', 'inline; filename="session.m3u8"');
+  res.send(m3u8);
 });
 
 // HEAD check for quick sync verification
