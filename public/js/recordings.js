@@ -198,6 +198,11 @@ document.addEventListener('DOMContentLoaded', () => {
             video.src = video.dataset.src;
             video.load();
 
+            video.addEventListener('loadedmetadata', () => {
+              // Ensure frame paints immediately in Safari / WebKit
+              video.currentTime = 0.5;
+            });
+
             video.onloadeddata = () => {
               video.style.opacity = '1';
             };
@@ -284,12 +289,23 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="clip-size">${file.sizeFormatted}</span>
           </div>
           <div class="clip-actions">
-            <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play
-            </button>
-            <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </a>
+            <div class="clip-btn-group">
+              <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play
+              </button>
+              <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </a>
+            </div>
+            <span class="clip-date-tag" title="Tanggal Rekaman">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              ${file.date}
+            </span>
           </div>
         </div>
       `;

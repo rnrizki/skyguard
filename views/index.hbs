@@ -47,7 +47,7 @@
       </div>
 
       <!-- 16:9 Aspect Ratio Video Viewport -->
-      <div class="video-viewport">
+      <div class="video-viewport" ondblclick="toggleCamFullscreen('card-{{this.id}}')">
         <!-- Live Loading Spinner -->
         <div class="video-loader" id="loader-{{this.id}}">
           <div class="spinner"></div>
@@ -62,6 +62,15 @@
           playsinline 
           class="surveillance-video"
         ></video>
+
+        <!-- Hover Play / Fullscreen Overlay (Frigate / S3 Style) -->
+        <div class="live-play-overlay" title="Double click atau Tap untuk Fullscreen" onclick="handleLiveCardTap(event, 'card-{{this.id}}')">
+          <div class="live-play-circle">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </div>
+        </div>
       </div>
 
       <!-- Footer Overlay -->

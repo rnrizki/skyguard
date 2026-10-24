@@ -79,7 +79,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 1500);
     });
   }
+
+  // Double click on camera card for fullscreen (PC / Mac)
+  cards.forEach(card => {
+    card.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button')) return;
+      toggleCamFullscreen(card.id);
+    });
+  });
 });
+
+// Mobile tap handler for live camera cards
+let lastTapTime = 0;
+window.handleLiveCardTap = function(e, cardId) {
+  const currentTime = new Date().getTime();
+  const diff = currentTime - lastTapTime;
+  // If double tap within 400ms or touched on mobile
+  if (diff < 400 && diff > 0) {
+    toggleCamFullscreen(cardId);
+    e.preventDefault();
+  } else if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    // Single tap on mobile directly goes fullscreen
+    toggleCamFullscreen(cardId);
+  }
+  lastTapTime = currentTime;
+};
 
 // Update live camera clocks (Asia/Jakarta WIB)
 function updateLiveClocks() {
@@ -97,22 +121,30 @@ function updateLiveClocks() {
   });
 }
 
-// Fullscreen toggle for individual camera cards
+// Fullscreen toggle for individual camera cards (Desktop + Mobile Safari/Android)
 window.toggleCamFullscreen = function(cardId) {
-  const card = document.getElementById(cardId);
+  const card = typeof cardId === 'string' ? document.getElementById(cardId) : cardId;
   if (!card) return;
 
-  if (!document.fullscreenElement) {
+  const video = card.querySelector('video');
+  const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+
+  if (!isFs) {
     if (card.requestFullscreen) {
-      card.requestFullscreen();
+      card.requestFullscreen().catch(() => {
+        if (video && video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+      });
     } else if (card.webkitRequestFullscreen) {
       card.webkitRequestFullscreen();
-    } else if (card.msRequestFullscreen) {
-      card.msRequestFullscreen();
+    } else if (video && video.webkitEnterFullscreen) {
+      // iOS Safari native fullscreen
+      video.webkitEnterFullscreen();
     }
   } else {
     if (document.exitFullscreen) {
       document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
     }
   }
 };

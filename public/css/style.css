@@ -350,6 +350,50 @@ body {
   display: block;
 }
 
+/* Live Card Hover Play Overlay & Fullscreen */
+.live-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease, background 0.2s ease;
+  z-index: 5;
+}
+
+.camera-card:hover .live-play-overlay {
+  opacity: 1;
+}
+
+.live-play-circle {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.75);
+  border: 2px solid rgba(56, 189, 248, 0.6);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+}
+
+.camera-card:hover .live-play-circle {
+  transform: scale(1.1);
+  background: rgba(2, 132, 199, 0.85);
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.live-play-circle svg {
+  margin-left: 3px;
+}
+
 .video-loader {
   position: absolute;
   inset: 0;
@@ -550,8 +594,31 @@ body {
 
 .clip-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+.clip-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.clip-date-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-left: auto;
 }
 
 /* Frigate Camera Popover Dropdown */
