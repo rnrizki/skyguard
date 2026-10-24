@@ -1,12 +1,12 @@
 /**
  * SkyGuard S3 Recordings Archive Controller
- * Queries RustFS S3 storage index, displays clips, and plays video with byte-range scrubbing
+ * Frigate-style Camera Radio Filter, Real Video Frame Thumbnails, and Live S3 Sync Verification
  */
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('recordings-filter-form');
   const dateSelect = document.getElementById('filter-date');
-  const cameraSelect = document.getElementById('filter-camera');
+  const cameraInput = document.getElementById('filter-camera');
   const hourSelect = document.getElementById('filter-hour');
   const resultsCount = document.getElementById('results-count');
   const resultsEmpty = document.getElementById('results-empty');
@@ -14,7 +14,89 @@ document.addEventListener('DOMContentLoaded', () => {
   const clipsGrid = document.getElementById('clips-grid');
   const modal = document.getElementById('video-modal');
 
-  // Load available dates from S3 bucket
+  // Frigate-Style Camera Popover Controls
+  const cameraBtn = document.getElementById('camera-dropdown-btn');
+  const cameraPopover = document.getElementById('camera-popover');
+  const selectedCameraText = document.getElementById('selected-camera-text');
+  const radioItems = document.querySelectorAll('.camera-radio-item');
+  const btnApply = document.getElementById('btn-camera-apply');
+  const btnReset = document.getElementById('btn-camera-reset');
+
+  let activeCamera = cameraInput.value || 'all';
+  let pendingCamera = activeCamera;
+  let pendingCameraName = 'All Cameras';
+
+  // Toggle Camera Popover
+  if (cameraBtn && cameraPopover) {
+    cameraBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = cameraPopover.style.display === 'block';
+      cameraPopover.style.display = isVisible ? 'none' : 'block';
+      cameraBtn.classList.toggle('open', !isVisible);
+    });
+
+    // Close popover when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!cameraPopover.contains(e.target) && !cameraBtn.contains(e.target)) {
+        cameraPopover.style.display = 'none';
+        cameraBtn.classList.remove('open');
+      }
+    });
+
+    // Camera Radio Switch Selection
+    radioItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const camId = item.getAttribute('data-cam');
+        const camName = item.getAttribute('data-name');
+        pendingCamera = camId;
+        pendingCameraName = camName;
+
+        // Update active UI switch
+        radioItems.forEach(i => {
+          const isSelected = i.getAttribute('data-cam') === camId;
+          i.classList.toggle('active', isSelected);
+          const pill = i.querySelector('.toggle-pill');
+          if (pill) pill.classList.toggle('active', isSelected);
+        });
+      });
+    });
+
+    // Apply button
+    if (btnApply) {
+      btnApply.addEventListener('click', () => {
+        activeCamera = pendingCamera;
+        cameraInput.value = activeCamera;
+        selectedCameraText.textContent = pendingCameraName;
+        cameraPopover.style.display = 'none';
+        cameraBtn.classList.remove('open');
+        searchRecordings();
+      });
+    }
+
+    // Reset button
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        activeCamera = 'all';
+        pendingCamera = 'all';
+        pendingCameraName = 'All Cameras';
+        cameraInput.value = 'all';
+        selectedCameraText.textContent = 'All Cameras';
+
+        radioItems.forEach(i => {
+          const isAll = i.getAttribute('data-cam') === 'all';
+          i.classList.toggle('active', isAll);
+          const pill = i.querySelector('.toggle-pill');
+          if (pill) pill.classList.toggle('active', isAll);
+        });
+
+        cameraPopover.style.display = 'none';
+        cameraBtn.classList.remove('open');
+        searchRecordings();
+      });
+    }
+  }
+
+  // Load available dates from ParadeDB / S3
   loadAvailableDates();
 
   async function loadAvailableDates() {
@@ -58,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function searchRecordings() {
-    const camera = cameraSelect.value;
+    const camera = cameraInput.value;
     const date = dateSelect.value;
     const hour = hourSelect.value;
 
@@ -68,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsLoading.style.display = 'block';
     resultsEmpty.style.display = 'none';
     clipsGrid.style.display = 'none';
-    resultsCount.textContent = 'Searching S3...';
+    resultsCount.textContent = 'Searching ParadeDB...';
 
     try {
       const queryParams = new URLSearchParams({ date });
@@ -101,8 +183,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // IntersectionObserver for lazy-loading video frame thumbnails
+  let videoObserver = null;
+  function initVideoObserver() {
+    if (videoObserver) {
+      videoObserver.disconnect();
+    }
+
+    videoObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const video = entry.target;
+          if (video.dataset.src && !video.src) {
+            video.src = video.dataset.src;
+            video.load();
+
+            video.onloadeddata = () => {
+              video.style.opacity = '1';
+            };
+
+            video.onerror = () => {
+              const card = video.closest('.clip-card');
+              if (card) {
+                const syncBadge = card.querySelector('.badge-sync');
+                if (syncBadge && !syncBadge.classList.contains('badge-s3-synced')) {
+                  syncBadge.className = 'badge-sync badge-s3-missing';
+                  syncBadge.textContent = '❌ Offline';
+                }
+              }
+            };
+          }
+          observer.unobserve(video);
+        }
+      });
+    }, {
+      rootMargin: '150px 0px' // Preload 150px before entering screen
+    });
+  }
+
   function renderClips(files) {
     clipsGrid.innerHTML = '';
+    initVideoObserver();
+
     files.forEach(file => {
       const card = document.createElement('div');
       card.className = 'clip-card';
@@ -119,34 +241,82 @@ document.addEventListener('DOMContentLoaded', () => {
         badgesHtml += `<span class="badge-motion" title="Motion detected">⚡ Motion</span>`;
       }
 
+      // S3 Sync Status Badge
+      const isSynced = file.s3Synced === true;
+      const syncBadgeClass = isSynced ? 'badge-s3-synced' : 'badge-s3-pending';
+      const syncBadgeText = isSynced ? '☁️ S3 Synced' : '⏳ Local (Pending S3)';
+
+      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(file.key)}`;
+
       card.innerHTML = `
         <div class="clip-thumbnail" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
           <div class="clip-aspect-wrapper">
-            <svg class="clip-play-icon" viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            <span class="clip-badge-time">${file.time}</span>
+            <!-- Real Video Frame Thumbnail (Lazy Loaded) -->
+            <video class="clip-preview-video" preload="none" muted playsinline data-src="${streamUrl}#t=0.5"></video>
+
+            <!-- Hover Play Overlay -->
+            <div class="clip-play-overlay">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+
+            <!-- Top Badges: Detections & S3 Sync Status -->
+            <div class="clip-badges-top">
+              <div style="display:flex;gap:4px;align-items:center;">
+                ${badgesHtml}
+              </div>
+              <span class="badge-sync ${syncBadgeClass}" data-key="${file.key}">
+                ${syncBadgeText}
+              </span>
+            </div>
+
+            <!-- Bottom Badges: Time & Duration -->
+            <div class="clip-badges-bottom">
+              <span class="clip-badge-time">${file.time}</span>
+              ${file.duration ? `<span class="clip-badge-dur">${file.duration}s</span>` : ''}
+            </div>
           </div>
         </div>
         <div class="clip-info">
           <div class="clip-meta">
             <span class="clip-camera">${camName}</span>
-            <div style="display:flex;gap:4px;align-items:center;">
-              ${badgesHtml}
-              <span class="clip-size">${file.sizeFormatted}</span>
-            </div>
+            <span class="clip-size">${file.sizeFormatted}</span>
           </div>
           <div class="clip-actions">
             <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play
             </button>
-            <a href="/api/recordings/stream?key=${encodeURIComponent(file.key)}" download class="btn btn-secondary btn-xs" title="Download clip">
+            <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </a>
           </div>
         </div>
       `;
+
+      // Hover-to-preview video snippet
+      card.addEventListener('mouseenter', () => {
+        const video = card.querySelector('.clip-preview-video');
+        if (video && video.readyState >= 2) {
+          video.play().catch(() => {});
+        }
+      });
+
+      card.addEventListener('mouseleave', () => {
+        const video = card.querySelector('.clip-preview-video');
+        if (video) {
+          video.pause();
+          video.currentTime = 0.5;
+        }
+      });
+
       clipsGrid.appendChild(card);
+
+      // Register video with IntersectionObserver
+      const videoEl = card.querySelector('.clip-preview-video');
+      if (videoEl && videoObserver) {
+        videoObserver.observe(videoEl);
+      }
     });
   }
 

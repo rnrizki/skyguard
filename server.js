@@ -2,7 +2,7 @@ const express = require('express');
 const { engine } = require('express-handlebars');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { Pool } = require('pg');
 
 const app = express();
@@ -431,6 +431,9 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
       const timeStr = filename.replace('.mp4', '').replace('.', ':');
       const formattedSize = r.segment_size ? `${Number(r.segment_size).toFixed(2)} MB` : 'N/A';
 
+      // S3 sync status check (dates before 2026-10-23 or 2026-10-23 hours <= 14 are in S3)
+      const isSynced = r.date < '2026-10-23' || (r.date === '2026-10-23' && parseInt(r.hour, 10) <= 14);
+
       return {
         id: r.id,
         key: key,
@@ -445,7 +448,8 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
         objects: r.objects || 0,
         motion: r.motion || 0,
         startTime: r.start_time,
-        endTime: r.end_time
+        endTime: r.end_time,
+        s3Synced: isSynced
       };
     });
 
@@ -507,15 +511,52 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
   }
 });
 
-// Stream MP4 Video from S3 with Byte-Range Support (for smooth scrubbing)
+// HEAD check for quick sync verification
+app.head('/api/recordings/stream', requireAuth, async (req, res) => {
+  const key = req.query.key;
+  if (!key) return res.status(400).end();
+
+  try {
+    const head = await s3.send(new HeadObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key
+    }));
+    res.setHeader('X-Storage-Source', 's3');
+    res.setHeader('X-S3-Synced', 'true');
+    res.setHeader('Content-Type', head.ContentType || 'video/mp4');
+    res.setHeader('Content-Length', head.ContentLength || 0);
+    res.setHeader('Accept-Ranges', 'bytes');
+    return res.status(200).end();
+  } catch (err) {
+    // S3 NotFound -> check local OpenWrt Frigate
+    try {
+      const openwrtUrl = `http://100.65.136.42:5000/${key}`;
+      const fRes = await globalThis.fetch(openwrtUrl, { method: 'HEAD' });
+      if (fRes.ok) {
+        res.setHeader('X-Storage-Source', 'openwrt-local');
+        res.setHeader('X-S3-Synced', 'false');
+        res.setHeader('Content-Type', fRes.headers.get('content-type') || 'video/mp4');
+        res.setHeader('Content-Length', fRes.headers.get('content-length') || 0);
+        res.setHeader('Accept-Ranges', 'bytes');
+        return res.status(200).end();
+      }
+    } catch (_) {}
+    res.setHeader('X-S3-Synced', 'false');
+    res.status(404).end();
+  }
+});
+
+// Stream MP4 Video from S3 (with OpenWrt fallback for fresh unsynced recordings)
 app.get('/api/recordings/stream', requireAuth, async (req, res) => {
   const key = req.query.key;
   if (!key) {
     return res.status(400).send('Missing key parameter');
   }
 
+  const range = req.headers.range;
+
+  // 1. Try S3 first
   try {
-    const range = req.headers.range;
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET,
       Key: key,
@@ -523,6 +564,9 @@ app.get('/api/recordings/stream', requireAuth, async (req, res) => {
     });
 
     const s3Response = await s3.send(command);
+
+    res.setHeader('X-Storage-Source', 's3');
+    res.setHeader('X-S3-Synced', 'true');
 
     if (range && s3Response.ContentRange) {
       res.writeHead(206, {
@@ -539,9 +583,43 @@ app.get('/api/recordings/stream', requireAuth, async (req, res) => {
       });
     }
 
-    s3Response.Body.pipe(res);
-  } catch (err) {
-    res.status(404).send(`Video not found or streaming error: ${err.message}`);
+    return s3Response.Body.pipe(res);
+  } catch (s3Err) {
+    // 2. S3 not found -> fallback to OpenWrt local Frigate VOD
+    try {
+      const openwrtUrl = `http://100.65.136.42:5000/${key}`;
+      const fetchHeaders = {};
+      if (range) fetchHeaders['Range'] = range;
+
+      const fRes = await globalThis.fetch(openwrtUrl, { headers: fetchHeaders });
+      if (fRes.ok || fRes.status === 206) {
+        res.setHeader('X-Storage-Source', 'openwrt-local');
+        res.setHeader('X-S3-Synced', 'false');
+
+        const headers = {
+          'Content-Type': fRes.headers.get('content-type') || 'video/mp4',
+          'Accept-Ranges': 'bytes'
+        };
+        if (fRes.headers.get('content-range')) headers['Content-Range'] = fRes.headers.get('content-range');
+        if (fRes.headers.get('content-length')) headers['Content-Length'] = fRes.headers.get('content-length');
+
+        res.writeHead(fRes.status, headers);
+        const reader = fRes.body.getReader();
+        const { Readable } = require('stream');
+        const readableStream = new Readable({
+          async read() {
+            const { done, value } = await reader.read();
+            if (done) this.push(null);
+            else this.push(Buffer.from(value));
+          }
+        });
+        return readableStream.pipe(res);
+      }
+    } catch (fErr) {
+      console.warn(`Fallback to OpenWrt failed for ${key}:`, fErr.message);
+    }
+
+    res.status(404).send(`Video not found or streaming error: ${s3Err.message}`);
   }
 });
 

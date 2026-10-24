@@ -22,15 +22,45 @@
   <!-- Search & Filter Card -->
   <div class="filter-card">
     <form id="recordings-filter-form" class="filter-form">
-      <!-- Camera Filter -->
-      <div class="form-field">
-        <label for="filter-camera">Camera</label>
-        <select id="filter-camera" name="camera" class="form-select">
-          <option value="all">All Cameras (Overview)</option>
-          {{#each cameras}}
-          <option value="{{this.id}}">{{this.name}}</option>
-          {{/each}}
-        </select>
+      <!-- Camera Filter (Frigate Popover Style with Radio Switches) -->
+      <div class="form-field camera-popover-field">
+        <label>Camera</label>
+        <input type="hidden" id="filter-camera" name="camera" value="all">
+        <div class="camera-filter-wrapper">
+          <button type="button" id="camera-dropdown-btn" class="camera-dropdown-btn">
+            <div class="btn-cam-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+              </svg>
+              <span id="selected-camera-text">All Cameras</span>
+            </div>
+            <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <!-- Frigate-Style Dropdown Popover -->
+          <div id="camera-popover" class="frigate-popover" style="display: none;">
+            <div class="popover-section-title">Semua_kamera</div>
+            <div class="camera-radio-list">
+              <div class="camera-radio-item active" data-cam="all" data-name="All Cameras">
+                <span class="cam-item-label">All Cameras</span>
+                <span class="toggle-pill active"><span class="toggle-circle"></span></span>
+              </div>
+              {{#each cameras}}
+              <div class="camera-radio-item" data-cam="{{this.id}}" data-name="{{this.name}}">
+                <span class="cam-item-label">{{this.name}}</span>
+                <span class="toggle-pill"><span class="toggle-circle"></span></span>
+              </div>
+              {{/each}}
+            </div>
+            <div class="popover-actions">
+              <button type="button" id="btn-camera-apply" class="btn btn-primary btn-sm">Apply</button>
+              <button type="button" id="btn-camera-reset" class="btn btn-ghost btn-sm">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Date Filter -->
@@ -80,7 +110,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          Search S3
+          Search Clips
         </button>
       </div>
     </form>

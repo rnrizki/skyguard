@@ -554,6 +554,308 @@ body {
   margin-top: 0.25rem;
 }
 
+/* Frigate Camera Popover Dropdown */
+.camera-popover-field {
+  position: relative;
+}
+
+.camera-filter-wrapper {
+  position: relative;
+}
+
+.camera-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.camera-dropdown-btn:hover {
+  border-color: #38bdf8;
+  background-color: #162032;
+}
+
+.btn-cam-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.chevron-icon {
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.camera-dropdown-btn.open .chevron-icon {
+  transform: rotate(180deg);
+}
+
+.frigate-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  max-width: 90vw;
+  background-color: #0b111e;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  padding: 0.75rem;
+  animation: fadeInPop 0.15s ease-out;
+}
+
+@keyframes fadeInPop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.popover-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.5rem 0.5rem;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 0.4rem;
+}
+
+.camera-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.camera-radio-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.camera-radio-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.camera-radio-item.active {
+  background-color: rgba(56, 189, 248, 0.1);
+}
+
+.cam-item-label {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.camera-radio-item.active .cam-item-label {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* iOS / Frigate Style Toggle Pill */
+.toggle-pill {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  background-color: #334155;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.toggle-pill.active {
+  background-color: #2563eb;
+}
+
+.toggle-circle {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toggle-pill.active .toggle-circle {
+  transform: translateX(16px);
+}
+
+.popover-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #1e293b;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+}
+
+.btn-ghost:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Real Video Thumbnail & Badges */
+.clip-thumbnail {
+  position: relative;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #030712;
+}
+
+.clip-aspect-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.clip-preview-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  background-color: #050811;
+  transition: transform 0.3s ease, filter 0.2s ease;
+}
+
+.clip-card:hover .clip-preview-video {
+  transform: scale(1.03);
+}
+
+.clip-play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.clip-card:hover .clip-play-overlay {
+  opacity: 1;
+}
+
+.clip-play-overlay svg {
+  color: #38bdf8;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+}
+
+.clip-badges-top {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.clip-badges-bottom {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.clip-badge-time {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  color: #f1f5f9;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.clip-badge-dur {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+/* S3 Sync Status Badges */
+.badge-sync {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.badge-s3-synced {
+  background-color: rgba(16, 185, 129, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(52, 211, 153, 0.6);
+}
+
+.badge-s3-pending {
+  background-color: rgba(217, 119, 6, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+}
+
+.badge-s3-missing {
+  background-color: rgba(220, 38, 38, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(248, 113, 113, 0.6);
+}
+
 /* Modal Video Player */
 .modal {
   position: fixed;
