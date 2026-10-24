@@ -123,7 +123,7 @@ app.get('/recordings', requireAuth, (req, res) => {
 // --- API: GO2RTC PROXY ---
 app.get('/api/go2rtc/streams', requireAuth, async (req, res) => {
   try {
-    const fetch = (await import('node-fetch')).default || global.fetch;
+    const fetch = globalThis.fetch;
     const response = await fetch(`${GO2RTC_URL}/api/streams`);
     const data = await response.json();
     res.json(data);
@@ -138,7 +138,7 @@ app.post('/api/webrtc', requireAuth, async (req, res) => {
     const src = req.query.src;
     if (!src) return res.status(400).send('Missing src parameter');
 
-    const fetch = (await import('node-fetch')).default || global.fetch;
+    const fetch = globalThis.fetch;
     const response = await fetch(`${GO2RTC_URL}/api/webrtc?src=${encodeURIComponent(src)}`, {
       method: 'POST',
       headers: { 'Content-Type': req.headers['content-type'] || 'text/plain' },
@@ -158,7 +158,7 @@ app.get('/api/go2rtc/frame.jpeg', requireAuth, async (req, res) => {
     const src = req.query.src;
     if (!src) return res.status(400).send('Missing src parameter');
 
-    const fetch = (await import('node-fetch')).default || global.fetch;
+    const fetch = globalThis.fetch;
     const response = await fetch(`${GO2RTC_URL}/api/frame.jpeg?src=${encodeURIComponent(src)}`);
     if (!response.ok) return res.status(response.status).send('Frame not available');
     
