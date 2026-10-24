@@ -1,0 +1,174 @@
+<div class="page-container">
+  <!-- Page Header -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        S3 Cloud Recordings Archive
+      </h2>
+      <span class="badge badge-success">Direct S3 / RustFS Sync</span>
+    </div>
+
+    <div class="toolbar-right">
+      <div class="s3-info-pill">
+        <span>Bucket: <strong>frigate/recordings</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search & Filter Card -->
+  <div class="filter-card">
+    <form id="recordings-filter-form" class="filter-form">
+      <!-- Camera Filter -->
+      <div class="form-field">
+        <label for="filter-camera">Camera</label>
+        <select id="filter-camera" name="camera" class="form-select">
+          <option value="all">All Cameras (Overview)</option>
+          {{#each cameras}}
+          <option value="{{this.id}}">{{this.name}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      <!-- Date Filter -->
+      <div class="form-field">
+        <label for="filter-date">Date (YYYY-MM-DD)</label>
+        <select id="filter-date" name="date" class="form-select">
+          <option value="">Loading dates...</option>
+        </select>
+      </div>
+
+      <!-- Hour Filter -->
+      <div class="form-field">
+        <label for="filter-hour">Hour (WIB)</label>
+        <select id="filter-hour" name="hour" class="form-select">
+          <option value="">All Hours (24H)</option>
+          <option value="00">00:00 - 01:00</option>
+          <option value="01">01:00 - 02:00</option>
+          <option value="02">02:00 - 03:00</option>
+          <option value="03">03:00 - 04:00</option>
+          <option value="04">04:00 - 05:00</option>
+          <option value="05">05:00 - 06:00</option>
+          <option value="06">06:00 - 07:00</option>
+          <option value="07">07:00 - 08:00</option>
+          <option value="08">08:00 - 09:00</option>
+          <option value="09">09:00 - 10:00</option>
+          <option value="10">10:00 - 11:00</option>
+          <option value="11">11:00 - 12:00</option>
+          <option value="12">12:00 - 13:00</option>
+          <option value="13">13:00 - 14:00</option>
+          <option value="14">14:00 - 15:00</option>
+          <option value="15">15:00 - 16:00</option>
+          <option value="16">16:00 - 17:00</option>
+          <option value="17">17:00 - 18:00</option>
+          <option value="18">18:00 - 19:00</option>
+          <option value="19">19:00 - 20:00</option>
+          <option value="20">20:00 - 21:00</option>
+          <option value="21">21:00 - 22:00</option>
+          <option value="22">22:00 - 23:00</option>
+          <option value="23">23:00 - 24:00</option>
+        </select>
+      </div>
+
+      <!-- Action Button -->
+      <div class="form-field form-field-btn">
+        <button type="submit" class="btn btn-primary btn-block">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          Search S3
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- S3 Storage Console Banner -->
+  <div class="s3-banner">
+    <div class="s3-banner-content">
+      <div class="s3-banner-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+        </svg>
+      </div>
+      <div>
+        <h4>RustFS Web File Manager</h4>
+        <p>Access the raw object console at <a href="{{s3WebConsole}}" target="_blank" rel="noopener noreferrer"><code>{{s3WebConsole}}</code></a> &bull; Username: <code>rustfsadmin</code> &bull; Password: <code>rustfsadminsecret</code></p>
+      </div>
+    </div>
+    <a href="{{s3WebConsole}}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Open Console &rarr;</a>
+  </div>
+
+  <!-- Results Section -->
+  <div class="results-container">
+    <div class="results-header">
+      <h3 id="results-title">Recorded Video Clips</h3>
+      <span id="results-count" class="badge badge-secondary">0 files found</span>
+    </div>
+
+    <!-- Empty State -->
+    <div id="results-empty" class="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <p>Select a date and click <strong>Search S3</strong> to view recorded video clips.</p>
+    </div>
+
+    <!-- Loading State -->
+    <div id="results-loading" class="loading-state" style="display: none;">
+      <div class="spinner"></div>
+      <p>Fetching recordings index from S3 storage...</p>
+    </div>
+
+    <!-- Video Clips Grid -->
+    <div id="clips-grid" class="clips-grid" style="display: none;"></div>
+  </div>
+</div>
+
+<!-- Video Player Modal (Strict 16:9) -->
+<div id="video-modal" class="modal" style="display: none;">
+  <div class="modal-overlay" onclick="closeVideoModal()"></div>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h3 id="modal-video-title">Playback Recording</h3>
+        <p id="modal-video-subtitle">--</p>
+      </div>
+      <button class="modal-close-btn" onclick="closeVideoModal()">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- 16:9 Video Player -->
+      <div class="modal-video-wrapper">
+        <video id="modal-video-player" controls autoplay playsinline class="modal-video"></video>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <div class="playback-controls">
+        <label>Speed:</label>
+        <button class="speed-btn active" onclick="setSpeed(1)">1.0x</button>
+        <button class="speed-btn" onclick="setSpeed(1.5)">1.5x</button>
+        <button class="speed-btn" onclick="setSpeed(2)">2.0x</button>
+        <button class="speed-btn" onclick="setSpeed(4)">4.0x</button>
+      </div>
+      <a id="modal-download-btn" href="#" download class="btn btn-secondary btn-sm">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download MP4
+      </a>
+    </div>
+  </div>
+</div>
+
+<script src="/js/recordings.js"></script>

@@ -1,0 +1,37 @@
+# go2rtc Edge Relay Configuration for SkyGuard on Dokploy
+# Pulls once from OpenWrt over Tailscale, distributes to all Dokploy web clients
+
+api:
+  listen: ":1984"
+
+rtsp:
+  listen: ":8554"
+
+webrtc:
+  listen: ":8555"
+
+streams:
+  # Hikvision Cameras (Main Stream High Resolution)
+  teras_depan:
+    - rtsp://100.65.136.42:8554/teras_depan
+  camera_02:
+    - rtsp://100.65.136.42:8554/camera_02
+  camera_03:
+    - rtsp://100.65.136.42:8554/camera_03
+  camera_04:
+    - rtsp://100.65.136.42:8554/camera_04
+  camera_05:
+    - rtsp://100.65.136.42:8554/camera_05
+  camera_06:
+    - rtsp://100.65.136.42:8554/camera_06
+  camera_07:
+    - rtsp://100.65.136.42:8554/camera_07
+  camera_08:
+    - rtsp://100.65.136.42:8554/camera_08
+
+  # D-Link Camera
+  dcs_5020l:
+    - rtsp://100.65.136.42:8554/dcs_5020l
+
+log:
+  level: info
