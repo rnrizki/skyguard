@@ -3,10 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: skyguard-web
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
       - PORT=3000
       - NODE_ENV=production
@@ -20,15 +17,26 @@ services:
       - S3_SECRET_KEY=${S3_SECRET_KEY:-Np6XMltnNIsKzSLDjZzg9umAJGMfx3iKe1gsio3e}
     depends_on:
       - go2rtc
+    networks:
+      - skyguard-network
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.skyguard.rule=Host(`skyguard.skyconnection.id`)"
+      - "traefik.http.routers.skyguard.entrypoints=web,websecure"
+      - "traefik.http.services.skyguard.loadbalancer.server.port=3000"
 
   go2rtc:
     image: alexxit/go2rtc:latest
-    container_name: skyguard-go2rtc
     restart: unless-stopped
-    ports:
-      - "1984:1984"
-      - "8554:8554"
-      - "8555:8555"
-      - "8555:8555/udp"
     volumes:
       - ./go2rtc.yaml:/config/go2rtc.yaml
+    networks:
+      - skyguard-network
+
+networks:
+  skyguard-network:
+    driver: bridge
+  dokploy-network:
+    external: true
