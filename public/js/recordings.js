@@ -497,9 +497,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================================
-// FRIGATE TRACKED OBJECT DETAILS MODAL ENGINE
+// ==========================================================
+// TRACKED OBJECT DETAILS MODAL (100% AWS S3 RUSTFS & PARADEDB)
 // ==========================================================
 let activeTrackedEvent = null;
+let activeTrackedSegments = [];
+let activeTrackedSegmentIdx = 0;
 
 window.openTrackedObjectModal = async function(eventId, initialTab = 'details') {
   const events = window._skyguardState ? window._skyguardState.getLoadedEvents() : [];
@@ -520,11 +523,19 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
   const modal = document.getElementById('tracked-object-modal');
   const player = document.getElementById('tracked-video-player');
   const downloadBtn = document.getElementById('tracked-download-btn');
+  const sessionNav = document.getElementById('tracked-session-nav');
+  const segCounter = document.getElementById('tracked-segment-counter');
+  const loadingEl = document.getElementById('tracked-video-loading');
 
-  // Video source & controls
-  const clipUrl = event.clipUrl || `/api/events/${event.id}/clip.mp4`;
-  downloadBtn.href = clipUrl;
-  player.src = clipUrl;
+  // Reset S3 Segments state
+  activeTrackedSegments = [];
+  activeTrackedSegmentIdx = 0;
+  if (sessionNav) sessionNav.style.display = 'none';
+
+  // Video source & controls (initial placeholder while S3 segments load)
+  const initialS3Url = `/api/events/${event.id}/clip.mp4`;
+  downloadBtn.href = initialS3Url;
+  player.src = initialS3Url;
   player.playbackRate = 1.0;
   window.resetTrackedSpeedButtons();
 
@@ -618,9 +629,82 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
     window.runAiAnalysis();
   }
 
-  // Open Modal & Autoplay
+  // Open Modal immediately
   modal.style.display = 'flex';
+
+  // 2. Query S3 recording segments via ParadeDB (100% AWS S3 RustFS, 0% OpenWrt CPU!)
+  if (loadingEl) loadingEl.style.display = 'flex';
+
+  try {
+    const s3Res = await fetch(`/api/events/${eventId}/s3-recording`);
+    const s3Data = await s3Res.json();
+
+    if (s3Data.success && s3Data.segments && s3Data.segments.length > 0) {
+      activeTrackedSegments = s3Data.segments;
+      playTrackedSegment(0);
+    } else {
+      // Fallback: S3 stream endpoint for event
+      const s3ClipUrl = `/api/events/${eventId}/clip.mp4`;
+      player.src = s3ClipUrl;
+      downloadBtn.href = s3ClipUrl;
+      player.playbackRate = 1.0;
+      window.resetTrackedSpeedButtons();
+      player.play().catch(e => console.warn('Autoplay prevented:', e));
+    }
+  } catch (err) {
+    console.warn('Could not query ParadeDB for S3 segments:', err);
+    const s3ClipUrl = `/api/events/${eventId}/clip.mp4`;
+    player.src = s3ClipUrl;
+    downloadBtn.href = s3ClipUrl;
+  } finally {
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+};
+
+function playTrackedSegment(idx) {
+  if (!activeTrackedSegments || idx < 0 || idx >= activeTrackedSegments.length) return;
+  activeTrackedSegmentIdx = idx;
+  const seg = activeTrackedSegments[idx];
+
+  const player = document.getElementById('tracked-video-player');
+  const downloadBtn = document.getElementById('tracked-download-btn');
+  const sessionNav = document.getElementById('tracked-session-nav');
+  const segCounter = document.getElementById('tracked-segment-counter');
+
+  if (sessionNav) {
+    sessionNav.style.display = activeTrackedSegments.length > 1 ? 'flex' : 'none';
+  }
+  if (segCounter) {
+    segCounter.textContent = `Segmen ${idx + 1} / ${activeTrackedSegments.length} (${seg.duration}s)`;
+  }
+
+  // Set Video Source directly from AWS S3 RustFS!
+  player.src = seg.streamUrl;
+  downloadBtn.href = seg.streamUrl;
+  downloadBtn.setAttribute('download', `${seg.camera}_${seg.key.split('/').pop()}`);
+  player.playbackRate = 1.0;
+  window.resetTrackedSpeedButtons();
+
   player.play().catch(e => console.warn('Autoplay prevented:', e));
+
+  // Seamless auto-advance to next S3 segment when finished
+  player.onended = () => {
+    if (activeTrackedSegmentIdx + 1 < activeTrackedSegments.length) {
+      playTrackedSegment(activeTrackedSegmentIdx + 1);
+    }
+  };
+}
+
+window.playTrackedNextSegment = function() {
+  if (activeTrackedSegmentIdx + 1 < activeTrackedSegments.length) {
+    playTrackedSegment(activeTrackedSegmentIdx + 1);
+  }
+};
+
+window.playTrackedPrevSegment = function() {
+  if (activeTrackedSegmentIdx - 1 >= 0) {
+    playTrackedSegment(activeTrackedSegmentIdx - 1);
+  }
 };
 
 function formatUsTimestamp(epochSec) {
@@ -641,6 +725,7 @@ window.closeTrackedModal = function() {
   const modal = document.getElementById('tracked-object-modal');
   const player = document.getElementById('tracked-video-player');
   activeTrackedEvent = null;
+  activeTrackedSegments = [];
   if (player) {
     player.pause();
     player.src = '';

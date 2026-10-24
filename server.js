@@ -734,44 +734,154 @@ app.get('/api/events/:id/snapshot.jpg', requireAuth, async (req, res) => {
   }
 });
 
-// Event Clip Stream (MP4 with Range support)
+// --- API: S3 RUSTFS EVENT RECORDING PLAYBACK (POWERED BY PARADEDB) ---
+// Finds all S3 recording segments for a given Frigate event using ParadeDB (0% OpenWrt CPU)
+app.get('/api/events/:id/s3-recording', requireAuth, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+
+    // 1. Get event metadata
+    let event = null;
+    try {
+      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
+      if (fRes.ok) event = await fRes.json();
+    } catch (_) {}
+
+    if (!event || !event.camera || !event.start_time) {
+      return res.status(404).json({ error: 'Event metadata not found' });
+    }
+
+    const camera = event.camera;
+    const startTime = Number(event.start_time) - 1.0;
+    const endTime = Number(event.end_time || (event.start_time + (event.duration || 10))) + 1.0;
+    const duration = Math.round(endTime - startTime);
+
+    // 2. Query ParadeDB for matching recording segments in S3 RustFS
+    const querySql = `
+      SELECT id, camera, path, start_time, end_time, duration, segment_size
+      FROM recordfrigate
+      WHERE camera = $1
+        AND start_time <= $3
+        AND (end_time >= $2 OR (start_time + duration) >= $2)
+      ORDER BY start_time ASC;
+    `;
+    const result = await pool.query(querySql, [camera, startTime, endTime]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.json({
+        success: false,
+        source: 's3_rustfs',
+        message: 'Segmen video kejadian ini sedang dalam proses sinkronisasi ke S3 RustFS.',
+        camera,
+        startTime,
+        endTime,
+        duration,
+        segments: []
+      });
+    }
+
+    const segments = result.rows.map(r => {
+      const key = r.path.replace(/^\/media\/frigate\//, '');
+      return {
+        id: r.id,
+        key: key,
+        camera: r.camera,
+        startTime: r.start_time,
+        endTime: r.end_time,
+        duration: Math.round(r.duration || (r.end_time - r.start_time) || 10),
+        sizeBytes: r.segment_size,
+        streamUrl: `/api/recordings/stream?key=${encodeURIComponent(key)}`
+      };
+    });
+
+    res.json({
+      success: true,
+      source: 's3_rustfs',
+      eventId,
+      camera,
+      startTime: event.start_time,
+      endTime: event.end_time,
+      duration: event.duration || duration,
+      segments
+    });
+
+  } catch (err) {
+    console.error('Error fetching S3 segments for event:', err);
+    res.status(500).json({ error: 'Failed to find S3 segments in ParadeDB', details: err.message });
+  }
+});
+
+// Event Clip Stream - ALWAYS DIRECTLY FROM AWS S3 RUSTFS (Zero OpenWrt CPU usage!)
 app.get('/api/events/:id/clip.mp4', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
     const range = req.headers.range;
-    const fetchHeaders = {};
-    if (range) fetchHeaders['Range'] = range;
 
-    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/clip.mp4`, {
-      headers: fetchHeaders
-    });
+    // 1. Get event metadata (lightweight metadata call, no ffmpeg)
+    let event = null;
+    try {
+      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
+      if (fRes.ok) event = await fRes.json();
+    } catch (_) {}
 
-    if (fRes.ok || fRes.status === 206) {
-      const headers = {
-        'Content-Type': fRes.headers.get('content-type') || 'video/mp4',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-cache'
-      };
-      if (fRes.headers.get('content-range')) headers['Content-Range'] = fRes.headers.get('content-range');
-      if (fRes.headers.get('content-length')) headers['Content-Length'] = fRes.headers.get('content-length');
-
-      res.writeHead(fRes.status, headers);
-      const { Readable } = require('stream');
-      const reader = fRes.body.getReader();
-      const readableStream = new Readable({
-        async read() {
-          const { done, value } = await reader.read();
-          if (done) this.push(null);
-          else this.push(Buffer.from(value));
-        }
-      });
-      return readableStream.pipe(res);
+    if (!event || !event.camera || !event.start_time) {
+      return res.status(404).send('Event not found');
     }
 
-    res.status(fRes.status).send('Clip not available on Frigate');
+    const camera = event.camera;
+    const startTime = Number(event.start_time) - 1.0;
+    const endTime = Number(event.end_time || (event.start_time + (event.duration || 10))) + 1.0;
+
+    // 2. Query ParadeDB for S3 recording segment
+    const querySql = `
+      SELECT path, start_time, end_time, duration
+      FROM recordfrigate
+      WHERE camera = $1
+        AND start_time <= $3
+        AND (end_time >= $2 OR (start_time + duration) >= $2)
+      ORDER BY start_time ASC
+      LIMIT 1;
+    `;
+    const result = await pool.query(querySql, [camera, startTime, endTime]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).send('Rekaman kejadian belum tersedia di AWS S3 RustFS');
+    }
+
+    const key = result.rows[0].path.replace(/^\/media\/frigate\//, '');
+
+    // 3. Stream directly from AWS S3 RustFS with Range support (Zero OpenWrt CPU!)
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+      Range: range || undefined
+    });
+
+    const s3Response = await s3.send(command);
+
+    res.setHeader('X-Storage-Source', 's3_rustfs');
+    res.setHeader('X-S3-Synced', 'true');
+
+    if (range && s3Response.ContentRange) {
+      res.writeHead(206, {
+        'Content-Range': s3Response.ContentRange,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': s3Response.ContentLength,
+        'Content-Type': s3Response.ContentType || 'video/mp4'
+      });
+    } else {
+      res.writeHead(200, {
+        'Content-Length': s3Response.ContentLength,
+        'Content-Type': s3Response.ContentType || 'video/mp4',
+        'Accept-Ranges': 'bytes'
+      });
+    }
+
+    return s3Response.Body.pipe(res);
+
   } catch (err) {
-    console.error('Error streaming event clip:', err);
-    res.status(502).send(`Error streaming event clip: ${err.message}`);
+    console.error(`Error streaming S3 clip for event ${req.params.id}:`, err.message);
+    res.status(500).send(`S3 streaming error: ${err.message}`);
   }
 });
 
@@ -1139,41 +1249,8 @@ app.get('/api/recordings/stream', requireAuth, async (req, res) => {
 
     return s3Response.Body.pipe(res);
   } catch (s3Err) {
-    // 2. S3 not found -> fallback to OpenWrt local Frigate VOD
-    try {
-      const openwrtUrl = `http://100.65.136.42:5000/${key}`;
-      const fetchHeaders = {};
-      if (range) fetchHeaders['Range'] = range;
-
-      const fRes = await globalThis.fetch(openwrtUrl, { headers: fetchHeaders });
-      if (fRes.ok || fRes.status === 206) {
-        res.setHeader('X-Storage-Source', 'openwrt-local');
-        res.setHeader('X-S3-Synced', 'false');
-
-        const headers = {
-          'Content-Type': fRes.headers.get('content-type') || 'video/mp4',
-          'Accept-Ranges': 'bytes'
-        };
-        if (fRes.headers.get('content-range')) headers['Content-Range'] = fRes.headers.get('content-range');
-        if (fRes.headers.get('content-length')) headers['Content-Length'] = fRes.headers.get('content-length');
-
-        res.writeHead(fRes.status, headers);
-        const reader = fRes.body.getReader();
-        const { Readable } = require('stream');
-        const readableStream = new Readable({
-          async read() {
-            const { done, value } = await reader.read();
-            if (done) this.push(null);
-            else this.push(Buffer.from(value));
-          }
-        });
-        return readableStream.pipe(res);
-      }
-    } catch (fErr) {
-      console.warn(`Fallback to OpenWrt failed for ${key}:`, fErr.message);
-    }
-
-    res.status(404).send(`Video not found or streaming error: ${s3Err.message}`);
+    console.warn(`S3 stream error for ${key}:`, s3Err.message);
+    res.status(404).send(`Video segment not found in AWS S3 RustFS: ${s3Err.message}`);
   }
 });
 

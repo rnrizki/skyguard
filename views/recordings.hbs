@@ -214,6 +214,9 @@
       <div class="tracked-video-col">
         <div class="tracked-video-wrapper">
           <video id="tracked-video-player" controls autoplay playsinline class="modal-video"></video>
+          <div id="tracked-video-loading" class="tracked-video-loading" style="display:none;">
+            <span id="tracked-loading-msg">Memuat rekaman dari AWS S3 RustFS...</span>
+          </div>
         </div>
 
         <div class="tracked-video-controls">
@@ -224,7 +227,19 @@
             <button class="speed-btn" onclick="setTrackedSpeed(2)">2.0x</button>
           </div>
 
+          <!-- S3 Segment Navigation Controls (Like AWS Archive Playback) -->
+          <div class="session-nav-controls" id="tracked-session-nav" style="display:none;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-tracked-prev" onclick="playTrackedPrevSegment()" title="Segmen S3 Sebelumnya">
+              ⏮ Sebelumnya
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-tracked-next" onclick="playTrackedNextSegment()" title="Segmen S3 Selanjutnya">
+              Selanjutnya ⏭
+            </button>
+            <span id="tracked-segment-counter" class="badge badge-info" style="font-size:0.75rem;">Segmen 1 / 1</span>
+          </div>
+
           <div style="display:flex;gap:6px;align-items:center;">
+            <span class="badge badge-success" id="tracked-s3-badge" title="Diputar langsung dari AWS S3 RustFS Cloud Storage (0% CPU OpenWrt)">☁️ S3 RustFS</span>
             <button type="button" class="btn btn-ai-action btn-sm" onclick="switchTrackedTab('ai'); runAiAnalysis();">
               <span class="ai-sparkle">✨</span> Analisis AI
             </button>
