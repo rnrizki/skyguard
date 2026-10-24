@@ -473,6 +473,48 @@ app.get('/api/events', requireAuth, async (req, res) => {
 // --- API: GEMINI AI SURVEILLANCE INTELLIGENCE ---
 const aiAnalysisCache = new Map();
 
+async function requestGeminiGenerate(parts) {
+  const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const gRes = await globalThis.fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            response_mime_type: 'application/json'
+          }
+        })
+      });
+
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          try {
+            return JSON.parse(rawText);
+          } catch (_) {
+            return { summary: rawText, riskLevel: 'Sedang', recommendation: 'Verifikasi rekaman visual secara langsung.' };
+          }
+        }
+      } else {
+        const errText = await gRes.text();
+        console.warn(`Gemini (${model}) returned ${gRes.status}:`, errText);
+        lastError = new Error(`Gemini HTTP ${gRes.status}`);
+      }
+    } catch (err) {
+      console.warn(`Gemini (${model}) error:`, err.message);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Failed to reach Gemini API');
+}
+
 // AI Analysis for Single Event
 app.post('/api/ai/analyze-event', requireAuth, async (req, res) => {
   try {
@@ -539,32 +581,7 @@ Format respon dalam JSON valid:
 }`
     });
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const gRes = await globalThis.fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          response_mime_type: 'application/json'
-        }
-      })
-    });
-
-    if (!gRes.ok) {
-      const errText = await gRes.text();
-      return res.status(gRes.status).json({ error: 'Gemini API Error', details: errText });
-    }
-
-    const gData = await gRes.json();
-    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
-    let parsed = null;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch (_) {
-      parsed = { summary: rawText, riskLevel: 'Sedang', recommendation: 'Verifikasi rekaman visual secara manual.' };
-    }
-
+    const parsed = await requestGeminiGenerate(parts);
     aiAnalysisCache.set(eventId, parsed);
     res.json({ success: true, analysis: parsed, cached: false });
 
@@ -616,26 +633,7 @@ Format respon dalam JSON valid:
   "securityRecommendations": ["Rekomendasi 1", "Rekomendasi 2"]
 }`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
-    const gRes = await globalThis.fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }],
-        generationConfig: {
-          response_mime_type: 'application/json'
-        }
-      })
-    });
-
-    if (!gRes.ok) {
-      const errText = await gRes.text();
-      return res.status(gRes.status).json({ error: 'Gemini briefing error', details: errText });
-    }
-
-    const gData = await gRes.json();
-    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
-    const briefing = JSON.parse(rawText);
+    const briefing = await requestGeminiGenerate([{ text: promptText }]);
     res.json({ success: true, briefing });
 
   } catch (err) {
