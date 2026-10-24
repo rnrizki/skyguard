@@ -23,6 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
+      const syncBadge = document.getElementById('sync-badge');
+      if (syncBadge && data.source === 'paradedb') {
+        syncBadge.textContent = 'ParadeDB High-Speed Index (Active)';
+      }
+
       dateSelect.innerHTML = '';
       if (data.dates && data.dates.length > 0) {
         data.dates.forEach(d => {
@@ -105,6 +110,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // Camera display name formatting
       const camName = file.camera.replace(/_/g, ' ').toUpperCase();
 
+      // Object detection & motion badges
+      let badgesHtml = '';
+      if (file.objects && file.objects > 0) {
+        badgesHtml += `<span class="badge-obj" title="${file.objects} object detections">🎯 ${file.objects} obj</span>`;
+      }
+      if (file.motion && file.motion > 0) {
+        badgesHtml += `<span class="badge-motion" title="Motion detected">⚡ Motion</span>`;
+      }
+
       card.innerHTML = `
         <div class="clip-thumbnail" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
           <div class="clip-aspect-wrapper">
@@ -117,7 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="clip-info">
           <div class="clip-meta">
             <span class="clip-camera">${camName}</span>
-            <span class="clip-size">${file.sizeFormatted}</span>
+            <div style="display:flex;gap:4px;align-items:center;">
+              ${badgesHtml}
+              <span class="clip-size">${file.sizeFormatted}</span>
+            </div>
           </div>
           <div class="clip-actions">
             <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">

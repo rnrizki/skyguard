@@ -15,6 +15,8 @@ services:
       - S3_BUCKET=${S3_BUCKET:-frigate}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-73IGfrigateTCD0ytq}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-Np6XMltnNIsKzSLDjZzg9umAJGMfx3iKe1gsio3e}
+      - PARADEDB_URL=${PARADEDB_URL:-postgresql://postgres:dNGwXb9OCrJNNaJMoKI7@mail-paradedb-46ygk4-postgres-1:5432/app}
+      - SYNC_KEY=${SYNC_KEY:-skyguard_sync_secret_key_2026}
     depends_on:
       - go2rtc
     networks:

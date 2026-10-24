@@ -184,6 +184,8 @@ body {
 .badge-info { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
 .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 .badge-secondary { background: #1e293b; color: #94a3b8; }
+.badge-obj { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 4px; font-weight: 600; }
+.badge-motion { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 4px; font-weight: 600; }
 
 /* Main Content Container */
 .main-content {
