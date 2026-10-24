@@ -24,6 +24,7 @@ const S3_SECRET_KEY = process.env.S3_SECRET_KEY || 'Np6XMltnNIsKzSLDjZzg9umAJGMf
 // ParadeDB PostgreSQL Credentials
 const PARADEDB_URL = process.env.PARADEDB_URL || 'postgresql://postgres:dNGwXb9OCrJNNaJMoKI7@mail-paradedb-46ygk4-postgres-1:5432/app';
 const SYNC_KEY = process.env.SYNC_KEY || 'skyguard_sync_secret_key_2026';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // Initialize S3 Client
 const s3 = new S3Client({
@@ -148,8 +149,12 @@ function parseRecordingMeta(rawPath, startTime) {
 // Helper: Group individual contiguous 10-second segments into continuous video sessions
 function groupIntoSessions(files) {
   if (!files || !files.length) return [];
+  // Exclude recordings with duration < 3 seconds per user requirement
+  const validFiles = files.filter(f => (f.duration !== undefined ? f.duration >= 3 : true));
+  if (!validFiles.length) return [];
+
   // Sort ascending by start time
-  const sorted = [...files].sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
+  const sorted = [...validFiles].sort((a, b) => (a.startTime || 0) - (b.startTime || 0));
   const sessions = [];
   let current = null;
 
@@ -211,7 +216,7 @@ function groupIntoSessions(files) {
     sessions.push(finalizeSession(current));
   }
 
-  return sessions.reverse();
+  return sessions.filter(s => s.totalDuration >= 3).reverse();
 }
 
 function finalizeSession(s) {
@@ -341,7 +346,7 @@ app.get('/api/go2rtc/frame.jpeg', requireAuth, async (req, res) => {
 // List events with metadata
 app.get('/api/events', requireAuth, async (req, res) => {
   try {
-    const { camera, cameras, limit, label, labels, before, after } = req.query;
+    const { camera, cameras, limit, label, labels, before, after, date } = req.query;
     const params = new URLSearchParams();
 
     const cam = camera || cameras;
@@ -349,14 +354,23 @@ app.get('/api/events', requireAuth, async (req, res) => {
       params.append('cameras', cam);
     }
     if (limit) params.append('limit', limit);
-    else params.append('limit', '60');
+    else params.append('limit', '100');
 
     const lbl = label || labels;
     if (lbl && lbl !== 'all') {
       params.append('labels', lbl);
     }
-    if (before) params.append('before', before);
-    if (after) params.append('after', after);
+
+    // Date filtering (YYYY-MM-DD in Asia/Jakarta GMT+7)
+    if (date && date !== 'all' && date !== '') {
+      const startDay = Math.floor(new Date(`${date}T00:00:00+07:00`).getTime() / 1000);
+      const endDay = Math.floor(new Date(`${date}T23:59:59+07:00`).getTime() / 1000);
+      if (!after && !isNaN(startDay)) params.append('after', String(startDay));
+      if (!before && !isNaN(endDay)) params.append('before', String(endDay));
+    } else {
+      if (before) params.append('before', before);
+      if (after) params.append('after', after);
+    }
 
     const frigateApiUrl = `${FRIGATE_URL}/api/events?${params.toString()}`;
     const fRes = await globalThis.fetch(frigateApiUrl);
@@ -369,6 +383,10 @@ app.get('/api/events', requireAuth, async (req, res) => {
       const startTime = Number(e.start_time) || 0;
       const endTime = e.end_time ? Number(e.end_time) : null;
       const duration = endTime ? Math.max(0, Math.round(endTime - startTime)) : 0;
+
+      // Filter out video with duration < 3 seconds per user requirement
+      if (duration < 3) return null;
+
       const mins = Math.floor(duration / 60);
       const secs = duration % 60;
       const durationFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
@@ -443,12 +461,186 @@ app.get('/api/events', requireAuth, async (req, res) => {
         clipUrl: `/api/events/${e.id}/clip.mp4`,
         data: e.data || {}
       };
-    });
+    }).filter(Boolean);
 
     res.json(formatted);
   } catch (err) {
     console.error('Failed to proxy Frigate events:', err);
     res.status(502).json({ error: 'Failed to retrieve Frigate events', details: err.message });
+  }
+});
+
+// --- API: GEMINI AI SURVEILLANCE INTELLIGENCE ---
+const aiAnalysisCache = new Map();
+
+// AI Analysis for Single Event
+app.post('/api/ai/analyze-event', requireAuth, async (req, res) => {
+  try {
+    const { eventId } = req.body;
+    if (!eventId) return res.status(400).json({ error: 'Missing eventId' });
+
+    if (aiAnalysisCache.has(eventId)) {
+      return res.json({ success: true, analysis: aiAnalysisCache.get(eventId), cached: true });
+    }
+
+    // 1. Fetch event metadata from Frigate
+    const metaRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
+    const event = metaRes.ok ? await metaRes.json() : null;
+
+    // 2. Fetch thumbnail or snapshot as base64
+    let b64Image = null;
+    let mimeType = 'image/webp';
+    try {
+      let imgRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/thumbnail.webp`);
+      if (!imgRes.ok) {
+        imgRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/snapshot.jpg`);
+        mimeType = 'image/jpeg';
+      }
+      if (imgRes.ok) {
+        const buf = await imgRes.arrayBuffer();
+        b64Image = Buffer.from(buf).toString('base64');
+      }
+    } catch (_) {}
+
+    const camName = event ? (event.camera || '').replace(/_/g, ' ').toUpperCase() : 'CCTV';
+    const label = event ? event.label : 'objek';
+    const startTimeStr = event && event.start_time ? new Date(event.start_time * 1000).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '';
+    const durSec = event && event.end_time ? Math.round(event.end_time - event.start_time) : 0;
+
+    const parts = [];
+    if (b64Image) {
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: b64Image
+        }
+      });
+    }
+
+    parts.push({
+      text: `Kamu adalah SkyGuard AI - Analis Intelijen Keamanan Pengawasan CCTV profesional.
+Analisis rekaman kejadian berikut:
+- Lokasi Kamera: ${camName}
+- Objek Terdeteksi: ${label}
+- Waktu Rekaman: ${startTimeStr} WIB
+- Durasi Rekaman: ${durSec} detik
+
+Tugasmu:
+1. Deskripsikan visual gambar secara ringkas (kondisi pencahayaan, arah gerak, aktivitas yang tampak).
+2. Tentukan Tingkat Risiko keamanan: "Rendah" (aktivitas wajar/rutin/penghuni), "Sedang" (aktivitas di luar jam wajar/perlu perhatian), atau "Tinggi" (mencurigakan/potensi penyusupan).
+3. Berikan Rekomendasi Tindakan Keamanan untuk pemilik/petugas keamanan.
+
+Format respon dalam JSON valid:
+{
+  "summary": "Deskripsi intelijen ringkas (2-3 kalimat dalam Bahasa Indonesia)",
+  "riskLevel": "Rendah" | "Sedang" | "Tinggi",
+  "activity": "Deskripsi aktivitas singkat",
+  "recommendation": "Rekomendasi tindakan keamanan praktis"
+}`
+    });
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const gRes = await globalThis.fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          response_mime_type: 'application/json'
+        }
+      })
+    });
+
+    if (!gRes.ok) {
+      const errText = await gRes.text();
+      return res.status(gRes.status).json({ error: 'Gemini API Error', details: errText });
+    }
+
+    const gData = await gRes.json();
+    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (_) {
+      parsed = { summary: rawText, riskLevel: 'Sedang', recommendation: 'Verifikasi rekaman visual secara manual.' };
+    }
+
+    aiAnalysisCache.set(eventId, parsed);
+    res.json({ success: true, analysis: parsed, cached: false });
+
+  } catch (err) {
+    console.error('AI Event Analysis Error:', err);
+    res.status(500).json({ error: 'Failed to generate AI analysis', details: err.message });
+  }
+});
+
+// Daily Security Intelligence Briefing
+app.post('/api/ai/daily-briefing', requireAuth, async (req, res) => {
+  try {
+    const { date, camera } = req.body;
+    const targetDate = date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+
+    const startDay = Math.floor(new Date(`${targetDate}T00:00:00+07:00`).getTime() / 1000);
+    const endDay = Math.floor(new Date(`${targetDate}T23:59:59+07:00`).getTime() / 1000);
+
+    let frigateUrl = `${FRIGATE_URL}/api/events?after=${startDay}&before=${endDay}&limit=80`;
+    if (camera && camera !== 'all') frigateUrl += `&cameras=${camera}`;
+
+    const fRes = await globalThis.fetch(frigateUrl);
+    const events = fRes.ok ? await fRes.json() : [];
+
+    const validEvents = events.filter(e => {
+      const dur = e.end_time ? (e.end_time - e.start_time) : 0;
+      return dur >= 3;
+    });
+
+    const promptText = `Kamu adalah SkyGuard AI - Chief Security Intelligence Analyst.
+Buat laporan ringkasan keamanan eksekutif ("Daily Surveillance Intelligence Briefing") untuk tanggal ${targetDate} WIB:
+- Total Kejadian Terdeteksi (> 3 detik): ${validEvents.length}
+- Kamera yang Terpantau: ${[...new Set(validEvents.map(e => e.camera))].join(', ') || 'Semua Kamera'}
+- Sampel Kejadian Utama: ${JSON.stringify(validEvents.slice(0, 15).map(e => ({
+  cam: e.camera,
+  label: e.label,
+  time: new Date(e.start_time * 1000).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }),
+  dur: e.end_time ? Math.round(e.end_time - e.start_time) + 's' : 'active'
+})))}
+
+Format respon dalam JSON valid:
+{
+  "title": "Laporan Intelijen Keamanan SkyGuard - ${targetDate}",
+  "totalEvents": ${validEvents.length},
+  "overallRisk": "Rendah" | "Sedang" | "Tinggi",
+  "executiveSummary": "Ringkasan situasi keamanan hari ini secara komprehensif (2-3 kalimat)",
+  "peakHours": "Waktu/jam dengan aktivitas tertinggi",
+  "keyHighlights": ["Poin penting 1", "Poin penting 2", "Poin penting 3"],
+  "securityRecommendations": ["Rekomendasi 1", "Rekomendasi 2"]
+}`;
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const gRes = await globalThis.fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: {
+          response_mime_type: 'application/json'
+        }
+      })
+    });
+
+    if (!gRes.ok) {
+      const errText = await gRes.text();
+      return res.status(gRes.status).json({ error: 'Gemini briefing error', details: errText });
+    }
+
+    const gData = await gRes.json();
+    const rawText = gData.candidates?.[0]?.content?.parts?.[0]?.text;
+    const briefing = JSON.parse(rawText);
+    res.json({ success: true, briefing });
+
+  } catch (err) {
+    console.error('AI Daily Briefing Error:', err);
+    res.status(500).json({ error: 'Failed to generate daily briefing', details: err.message });
   }
 });
 
@@ -761,8 +953,9 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
       };
     });
 
-    const sessions = groupIntoSessions(files);
-    return res.json({ files, sessions, count: files.length, sessionCount: sessions.length, source: 'paradedb' });
+    const validFiles = files.filter(f => (f.duration !== undefined ? f.duration >= 3 : true));
+    const sessions = groupIntoSessions(validFiles);
+    return res.json({ files: validFiles, sessions, count: validFiles.length, sessionCount: sessions.length, source: 'paradedb' });
   } catch (err) {
     console.warn('ParadeDB list query failed, falling back to S3:', err.message);
   }
@@ -811,12 +1004,14 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
         size: item.Size,
         sizeFormatted: formattedSize,
         lastModified: item.LastModified,
+        duration: 10,
         s3Synced: true
       };
     }).sort((a, b) => b.key.localeCompare(a.key));
 
-    const sessions = groupIntoSessions(files);
-    res.json({ files, sessions, count: files.length, sessionCount: sessions.length, prefix, source: 's3' });
+    const validFiles = files.filter(f => (f.duration !== undefined ? f.duration >= 3 : true));
+    const sessions = groupIntoSessions(validFiles);
+    res.json({ files: validFiles, sessions, count: validFiles.length, sessionCount: sessions.length, prefix, source: 's3' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to query recordings from S3', details: err.message });
   }

@@ -10,6 +10,9 @@
         Surveillance Recordings & Events
       </h2>
       <span class="badge badge-success" id="sync-badge">Frigate Event Engine (Active)</span>
+      <button type="button" class="btn-ai-header" onclick="openDailyBriefingModal()" title="Buka ringkasan intelijen harian yang dianalisis oleh Gemini AI">
+        <span class="ai-sparkle">✨</span> Laporan AI Harian (Gemini)
+      </button>
     </div>
 
     <!-- Mode Selector: Tracked Events (Default) vs 24/7 Full Archive -->
@@ -92,11 +95,11 @@
         </select>
       </div>
 
-      <!-- Date Filter (Active in Archive Mode or Date Navigation) -->
-      <div class="form-field" id="field-filter-date" style="display: none;">
-        <label for="filter-date">Date (YYYY-MM-DD)</label>
+      <!-- Date Filter: ALWAYS VISIBLE PER USER REQUEST -->
+      <div class="form-field" id="field-filter-date">
+        <label for="filter-date">Date / Tanggal (WIB)</label>
         <select id="filter-date" name="date" class="form-select">
-          <option value="">Loading dates...</option>
+          <option value="">Semua Tanggal (Terbaru)</option>
         </select>
       </div>
 
@@ -179,7 +182,7 @@
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
-      <p id="results-empty-msg">Tidak ada rekaman atau kejadian yang ditemukan untuk filter yang dipilih.</p>
+      <p id="results-empty-msg">Tidak ada rekaman atau kejadian (> 3 detik) yang ditemukan untuk filter yang dipilih.</p>
     </div>
 
     <!-- Loading State -->
@@ -194,7 +197,7 @@
 </div>
 
 <!-- ========================================================== -->
-<!-- FRIGATE TRACKED OBJECT DETAILS MODAL (Exact Matching UI)   -->
+<!-- FRIGATE TRACKED OBJECT DETAILS MODAL (WITH GEMINI AI TAB)  -->
 <!-- ========================================================== -->
 <div id="tracked-object-modal" class="modal" style="display: none;">
   <div class="modal-overlay" onclick="closeTrackedModal()"></div>
@@ -205,7 +208,7 @@
       <button class="modal-close-btn" onclick="closeTrackedModal()">&times;</button>
     </div>
 
-    <!-- 2-Column Body: Left Video, Right Details Timeline -->
+    <!-- 2-Column Body: Left Video, Right Details Timeline & AI -->
     <div class="tracked-modal-body">
       <!-- Left Column: Unified Video Player & Controls -->
       <div class="tracked-video-col">
@@ -221,28 +224,35 @@
             <button class="speed-btn" onclick="setTrackedSpeed(2)">2.0x</button>
           </div>
 
-          <a id="tracked-download-btn" href="#" download class="btn btn-secondary btn-sm">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Download Clip (MP4)
-          </a>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button type="button" class="btn btn-ai-action btn-sm" onclick="switchTrackedTab('ai'); runAiAnalysis();">
+              <span class="ai-sparkle">✨</span> Analisis AI
+            </button>
+            <a id="tracked-download-btn" href="#" download class="btn btn-secondary btn-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Download MP4
+            </a>
+          </div>
         </div>
       </div>
 
-      <!-- Right Column: Frigate Tabs (Thumbnail / Tracking Details) & Timeline -->
+      <!-- Right Column: Tabs (Thumbnail / Tracking Details / Gemini AI) -->
       <div class="tracked-details-col">
         <!-- Top Tab Pills -->
         <div class="tracked-tabs-nav">
           <button type="button" class="tracked-nav-pill" id="tab-pill-thumb" onclick="switchTrackedTab('thumbnail')">Thumbnail</button>
           <button type="button" class="tracked-nav-pill active" id="tab-pill-details" onclick="switchTrackedTab('details')">Tracking Details</button>
+          <button type="button" class="tracked-nav-pill ai-nav-pill" id="tab-pill-ai" onclick="switchTrackedTab('ai')">
+            <span class="ai-sparkle">✨</span> Analisis AI Gemini
+          </button>
         </div>
 
         <!-- Tracking Details Pane -->
         <div id="tracked-pane-details" class="tracked-pane">
-          <!-- Event Header: Icon, Label, US Date Time Range -->
           <div class="event-meta-header">
             <div class="event-meta-title">
               <span id="dtl-obj-icon" class="event-icon">🚶</span>
@@ -256,9 +266,7 @@
           <!-- Vertical Tracking Timeline -->
           <div class="tracking-timeline-wrapper">
             <div class="timeline-line"></div>
-            <div id="timeline-items" class="timeline-items">
-              <!-- Dynamically populated timeline dots -->
-            </div>
+            <div id="timeline-items" class="timeline-items"></div>
           </div>
         </div>
 
@@ -268,7 +276,76 @@
             <img id="dtl-thumb-img" src="" alt="Tracked Object Snapshot" class="tracked-thumb-img">
           </div>
         </div>
+
+        <!-- Gemini AI Analysis Pane -->
+        <div id="tracked-pane-ai" class="tracked-pane" style="display: none;">
+          <div class="ai-analysis-container">
+            <div class="ai-header-bar">
+              <div class="ai-title-group">
+                <span class="ai-badge-label">🤖 Gemini 3.8 Flash Vision</span>
+                <span id="ai-risk-level-badge" class="badge badge-warning">Menganalisis...</span>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs" onclick="runAiAnalysis(true)" title="Analisis ulang">
+                🔄 Refresh
+              </button>
+            </div>
+
+            <div id="ai-loading" class="ai-loading-box" style="display: none;">
+              <div class="spinner"></div>
+              <p>Gemini sedang menganalisis rekaman gambar & konteks visual...</p>
+            </div>
+
+            <div id="ai-results-box" class="ai-results-box">
+              <div class="ai-section">
+                <label class="ai-section-label">📋 Ringkasan Kejadian:</label>
+                <p id="ai-summary-text" class="ai-section-text">Klik "Analisis AI" untuk memulai.</p>
+              </div>
+
+              <div class="ai-section">
+                <label class="ai-section-label">🔍 Aktivitas Teramati:</label>
+                <p id="ai-activity-text" class="ai-section-text">--</p>
+              </div>
+
+              <div class="ai-section">
+                <label class="ai-section-label">🛡️ Rekomendasi Keamanan:</label>
+                <p id="ai-recommendation-text" class="ai-section-text">--</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================== -->
+<!-- GEMINI AI DAILY BRIEFING MODAL                             -->
+<!-- ========================================================== -->
+<div id="daily-briefing-modal" class="modal" style="display: none;">
+  <div class="modal-overlay" onclick="closeDailyBriefingModal()"></div>
+  <div class="modal-dialog ai-briefing-dialog">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h3 class="modal-title">✨ Laporan Intelijen Keamanan AI (Gemini)</h3>
+        <p id="briefing-subtitle">Rangkuman situasi keamanan harian otomatis</p>
+      </div>
+      <button class="modal-close-btn" onclick="closeDailyBriefingModal()">&times;</button>
+    </div>
+
+    <div class="modal-body briefing-modal-body">
+      <div id="briefing-loading" class="loading-state" style="display: none;">
+        <div class="spinner"></div>
+        <p>Gemini AI sedang menganalisis seluruh data rekaman & kejadian hari ini...</p>
+      </div>
+
+      <div id="briefing-content" class="briefing-content">
+        <!-- Dynamically populated by JS -->
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="closeDailyBriefingModal()">Tutup</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="loadDailyBriefing(true)">🔄 Muat Ulang Briefing</button>
     </div>
   </div>
 </div>

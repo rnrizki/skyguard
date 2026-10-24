@@ -1,6 +1,6 @@
 /**
  * SkyGuard Surveillance Recordings & Events Controller
- * Native Frigate Tracked Object Details View, Seamless Unified Event Clips & 24/7 Archive
+ * Native Frigate Tracked Object Details, Gemini AI Intelligence & 24/7 Archive
  */
 
 let currentPrimaryMode = 'events'; // 'events' (default) or 'archive'
@@ -130,6 +130,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // When date is changed in select, trigger search immediately
+  if (dateSelect) {
+    dateSelect.addEventListener('change', () => {
+      triggerSearch();
+    });
+  }
+
   // Handle Form Submit
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -155,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tabEvents.classList.add('active');
       tabArchive.classList.remove('active');
       fieldFilterLabel.style.display = 'block';
-      fieldFilterDate.style.display = 'none';
+      fieldFilterDate.style.display = 'block'; // ALWAYS VISIBLE
       fieldFilterHour.style.display = 'none';
       archiveViewToggle.style.display = 'none';
       resultsTitle.textContent = 'Tracked Object Events (Video Utuh)';
@@ -165,18 +172,37 @@ document.addEventListener('DOMContentLoaded', () => {
       tabArchive.classList.add('active');
       tabEvents.classList.remove('active');
       fieldFilterLabel.style.display = 'none';
-      fieldFilterDate.style.display = 'block';
+      fieldFilterDate.style.display = 'block'; // ALWAYS VISIBLE
       fieldFilterHour.style.display = 'block';
       archiveViewToggle.style.display = 'flex';
       resultsTitle.textContent = '24/7 Continuous Recordings Archive';
       submitText.textContent = 'Cari Rekaman 24/7';
-      if (!dateSelect.value) {
-        loadAvailableDates();
-      } else {
-        searchArchiveRecordings();
-      }
+      searchArchiveRecordings();
     }
   };
+
+  // Load available dates on startup
+  loadAvailableDates();
+
+  async function loadAvailableDates() {
+    try {
+      const res = await fetch('/api/recordings/dates');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      dateSelect.innerHTML = '<option value="">Semua Tanggal (Terbaru)</option>';
+      if (data.dates && data.dates.length > 0) {
+        data.dates.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = `${d}`;
+          dateSelect.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      console.warn('Could not populate date list:', err);
+    }
+  }
 
   // LOAD TRACKED EVENTS (DEFAULT)
   async function loadTrackedEvents() {
@@ -188,10 +214,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cam = cameraInput.value || 'all';
     const label = labelSelect ? labelSelect.value : 'all';
+    const date = dateSelect ? dateSelect.value : '';
 
-    const queryParams = new URLSearchParams({ limit: '60' });
+    const queryParams = new URLSearchParams({ limit: '100' });
     if (cam && cam !== 'all') queryParams.append('cameras', cam);
     if (label && label !== 'all') queryParams.append('labels', label);
+    if (date) queryParams.append('date', date);
 
     try {
       const res = await fetch(`/api/events?${queryParams.toString()}`);
@@ -199,16 +227,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const events = await res.json();
 
       resultsLoading.style.display = 'none';
-      loadedEvents = events || [];
+
+      // Ensure no video with duration < 3s appears in the tab
+      loadedEvents = (events || []).filter(e => (e.duration === undefined || e.duration >= 3));
 
       if (!loadedEvents.length) {
         resultsEmpty.style.display = 'block';
-        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek untuk kamera "${selectedCameraText.textContent}".`;
+        const dateNote = date ? ` untuk tanggal ${date}` : '';
+        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek (> 3 detik) untuk kamera "${selectedCameraText.textContent}"${dateNote}.`;
         resultsCount.textContent = '0 kejadian ditemukan';
         return;
       }
 
-      resultsCount.textContent = `${loadedEvents.length} Kejadian Terdeteksi (Video Utuh)`;
+      resultsCount.textContent = `${loadedEvents.length} Kejadian Terdeteksi (Durasi ≥ 3s)`;
       renderTrackedEvents(loadedEvents);
       clipsGrid.style.display = 'grid';
 
@@ -225,6 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
     clipsGrid.innerHTML = '';
 
     events.forEach(event => {
+      // Strict client-side check: exclude < 3s
+      if (event.duration !== undefined && event.duration < 3) return;
+
       const card = document.createElement('div');
       card.className = 'clip-card event-card';
 
@@ -267,7 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="clip-actions">
             <div class="clip-btn-group">
               <button class="btn btn-primary btn-xs" onclick="openTrackedObjectModal('${event.id}')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video Utuh
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video
+              </button>
+              <button class="btn btn-ai-action btn-xs" onclick="openTrackedObjectModal('${event.id}', 'ai')" title="Analisis kejadian dengan Gemini AI">
+                <span class="ai-sparkle">✨</span> AI
               </button>
               <a href="${event.clipUrl}" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh (MP4)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -285,36 +322,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // LOAD 24/7 ARCHIVE RECORDINGS
-  async function loadAvailableDates() {
-    try {
-      const res = await fetch('/api/recordings/dates');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      dateSelect.innerHTML = '';
-      if (data.dates && data.dates.length > 0) {
-        data.dates.forEach(d => {
-          const opt = document.createElement('option');
-          opt.value = d;
-          opt.textContent = d;
-          dateSelect.appendChild(opt);
-        });
-        searchArchiveRecordings();
-      } else {
-        dateSelect.innerHTML = '<option value="">No recorded dates found</option>';
-      }
-    } catch (err) {
-      console.error('Failed to load dates:', err);
-      dateSelect.innerHTML = '<option value="">Error loading dates</option>';
-    }
-  }
-
   async function searchArchiveRecordings() {
     const camera = cameraInput.value;
     const date = dateSelect.value;
     const hour = hourSelect.value;
 
-    if (!date) return;
+    if (!date) {
+      resultsEmpty.style.display = 'block';
+      resultsEmptyMsg.textContent = 'Silakan pilih tanggal untuk mencari arsip rekaman 24/7.';
+      resultsCount.textContent = 'Pilih Tanggal';
+      return;
+    }
 
     resultsLoading.style.display = 'block';
     resultsLoadingMsg.textContent = 'Memuat rekaman dari ParadeDB / S3...';
@@ -332,12 +350,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
 
       resultsLoading.style.display = 'none';
-      loadedFiles = data.files || [];
-      loadedSessions = data.sessions || [];
+      // Filter out duration < 3 seconds
+      loadedFiles = (data.files || []).filter(f => (f.duration === undefined || f.duration >= 3));
+      loadedSessions = (data.sessions || []).filter(s => (s.totalDuration === undefined || s.totalDuration >= 3));
 
       if (!loadedFiles.length) {
         resultsEmpty.style.display = 'block';
-        resultsEmptyMsg.textContent = `Tidak ada rekaman untuk tanggal ${date} dengan filter yang dipilih.`;
+        resultsEmptyMsg.textContent = `Tidak ada rekaman (> 3 detik) untuk tanggal ${date} dengan filter yang dipilih.`;
         resultsCount.textContent = '0 clips found';
         return;
       }
@@ -359,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
       resultsCount.textContent = `${loadedSessions.length} Video Sesi Utuh (${loadedFiles.length} segmen)`;
       renderArchiveSessions(loadedSessions);
     } else {
-      resultsCount.textContent = `${loadedFiles.length} Segmen 10 Detik`;
+      resultsCount.textContent = `${loadedFiles.length} Segmen (≥ 3 Detik)`;
       renderArchiveClips(loadedFiles);
     }
   }
@@ -367,6 +386,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderArchiveSessions(sessions) {
     clipsGrid.innerHTML = '';
     sessions.forEach((session, sIdx) => {
+      if (session.totalDuration && session.totalDuration < 3) return;
+
       const card = document.createElement('div');
       card.className = `clip-card session-card ${session.totalObjects > 0 ? 'has-event' : ''}`;
       const camName = session.camera.replace(/_/g, ' ').toUpperCase();
@@ -419,6 +440,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderArchiveClips(files) {
     clipsGrid.innerHTML = '';
     files.forEach(file => {
+      if (file.duration && file.duration < 3) return;
+
       const card = document.createElement('div');
       card.className = 'clip-card';
       const camName = file.camera.replace(/_/g, ' ').toUpperCase();
@@ -433,7 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="clip-badges-bottom">
               <span class="clip-badge-time">${file.time}</span>
-              <span class="clip-badge-dur">10s</span>
+              <span class="clip-badge-dur">${file.duration || 10}s</span>
             </div>
           </div>
         </div>
@@ -444,7 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="clip-actions">
             <button class="btn btn-primary btn-xs" onclick="playSingleClip('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
-              Play 10s
+              Play Clip
             </button>
             <a href="${streamUrl}" download class="btn btn-secondary btn-xs">Download</a>
           </div>
@@ -459,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') {
       window.closeTrackedModal();
       window.closeVideoModal();
+      window.closeDailyBriefingModal();
     }
   });
 
@@ -477,11 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==========================================================
 let activeTrackedEvent = null;
 
-window.openTrackedObjectModal = async function(eventId) {
+window.openTrackedObjectModal = async function(eventId, initialTab = 'details') {
   const events = window._skyguardState ? window._skyguardState.getLoadedEvents() : [];
   let event = events.find(e => e.id === eventId);
 
-  // If not found in loaded array, fetch directly
   if (!event) {
     try {
       const res = await fetch(`/api/events/${eventId}`);
@@ -530,7 +553,6 @@ window.openTrackedObjectModal = async function(eventId) {
   const timelineContainer = document.getElementById('timeline-items');
   if (timelineContainer) {
     timelineContainer.innerHTML = '';
-
     const scoreText = `Score: ${event.score || 75}%`;
 
     // Step 1: Detected
@@ -546,7 +568,7 @@ window.openTrackedObjectModal = async function(eventId) {
     `;
     timelineContainer.appendChild(step1);
 
-    // Step 2: Stationary (if applicable or stationary_time in data)
+    // Step 2: Stationary
     const isStationary = event.data && (event.data.stationary === true || event.data.stationary_time);
     if (isStationary || (event.duration && event.duration > 20)) {
       const statTime = event.data && event.data.stationary_time
@@ -590,8 +612,11 @@ window.openTrackedObjectModal = async function(eventId) {
     }
   }
 
-  // Switch to Tracking Details tab by default
-  window.switchTrackedTab('details');
+  // Switch to initial tab
+  window.switchTrackedTab(initialTab);
+  if (initialTab === 'ai') {
+    window.runAiAnalysis();
+  }
 
   // Open Modal & Autoplay
   modal.style.display = 'flex';
@@ -628,19 +653,205 @@ window.closeTrackedModal = function() {
 window.switchTrackedTab = function(tabName) {
   const pillThumb = document.getElementById('tab-pill-thumb');
   const pillDetails = document.getElementById('tab-pill-details');
+  const pillAi = document.getElementById('tab-pill-ai');
+
   const paneThumb = document.getElementById('tracked-pane-thumbnail');
   const paneDetails = document.getElementById('tracked-pane-details');
+  const paneAi = document.getElementById('tracked-pane-ai');
 
-  if (tabName === 'thumbnail') {
-    pillThumb.classList.add('active');
-    pillDetails.classList.remove('active');
-    paneThumb.style.display = 'block';
-    paneDetails.style.display = 'none';
-  } else {
-    pillDetails.classList.add('active');
-    pillThumb.classList.remove('active');
-    paneDetails.style.display = 'block';
-    paneThumb.style.display = 'none';
+  pillThumb.classList.toggle('active', tabName === 'thumbnail');
+  pillDetails.classList.toggle('active', tabName === 'details');
+  pillAi.classList.toggle('active', tabName === 'ai');
+
+  paneThumb.style.display = (tabName === 'thumbnail') ? 'block' : 'none';
+  paneDetails.style.display = (tabName === 'details') ? 'block' : 'none';
+  paneAi.style.display = (tabName === 'ai') ? 'block' : 'none';
+
+  if (tabName === 'ai') {
+    window.runAiAnalysis();
+  }
+};
+
+// ==========================================================
+// GEMINI AI EVENT ANALYSIS
+// ==========================================================
+window.runAiAnalysis = async function(forceRefresh = false) {
+  if (!activeTrackedEvent) return;
+
+  const loadingEl = document.getElementById('ai-loading');
+  const resultsBox = document.getElementById('ai-results-box');
+  const riskBadge = document.getElementById('ai-risk-level-badge');
+  const summaryEl = document.getElementById('ai-summary-text');
+  const activityEl = document.getElementById('ai-activity-text');
+  const recEl = document.getElementById('ai-recommendation-text');
+
+  if (!forceRefresh && activeTrackedEvent._aiAnalysis) {
+    displayAiAnalysis(activeTrackedEvent._aiAnalysis);
+    return;
+  }
+
+  loadingEl.style.display = 'block';
+  resultsBox.style.display = 'none';
+  riskBadge.className = 'badge badge-warning';
+  riskBadge.textContent = 'Menganalisis...';
+
+  try {
+    const res = await fetch('/api/ai/analyze-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: activeTrackedEvent.id })
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const analysis = data.analysis;
+
+    activeTrackedEvent._aiAnalysis = analysis;
+    displayAiAnalysis(analysis);
+
+  } catch (err) {
+    console.error('AI Analysis Failed:', err);
+    loadingEl.style.display = 'none';
+    resultsBox.style.display = 'block';
+    riskBadge.className = 'badge badge-danger';
+    riskBadge.textContent = 'Error';
+    summaryEl.textContent = `Gagal menjalankan analisis AI: ${err.message}`;
+    activityEl.textContent = '--';
+    recEl.textContent = 'Silakan periksa koneksi atau coba beberapa saat lagi.';
+  }
+};
+
+function displayAiAnalysis(analysis) {
+  const loadingEl = document.getElementById('ai-loading');
+  const resultsBox = document.getElementById('ai-results-box');
+  const riskBadge = document.getElementById('ai-risk-level-badge');
+  const summaryEl = document.getElementById('ai-summary-text');
+  const activityEl = document.getElementById('ai-activity-text');
+  const recEl = document.getElementById('ai-recommendation-text');
+
+  loadingEl.style.display = 'none';
+  resultsBox.style.display = 'block';
+
+  const risk = analysis.riskLevel || 'Sedang';
+  let badgeClass = 'badge-risk-sedang';
+  if (risk.toLowerCase().includes('rendah')) badgeClass = 'badge-risk-rendah';
+  if (risk.toLowerCase().includes('tinggi')) badgeClass = 'badge-risk-tinggi';
+
+  riskBadge.className = `badge ${badgeClass}`;
+  riskBadge.textContent = `Risiko: ${risk}`;
+
+  summaryEl.textContent = analysis.summary || 'Tidak ada deskripsi.';
+  activityEl.textContent = analysis.activity || 'Aktivitas normal di area pengawasan.';
+  recEl.textContent = analysis.recommendation || 'Lanjutkan pemantauan rutin.';
+}
+
+// ==========================================================
+// GEMINI AI DAILY BRIEFING MODAL
+// ==========================================================
+window.openDailyBriefingModal = function() {
+  const modal = document.getElementById('daily-briefing-modal');
+  modal.style.display = 'flex';
+  window.loadDailyBriefing();
+};
+
+window.closeDailyBriefingModal = function() {
+  const modal = document.getElementById('daily-briefing-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.loadDailyBriefing = async function(forceRefresh = false) {
+  const dateSelect = document.getElementById('filter-date');
+  const cameraInput = document.getElementById('filter-camera');
+  const loadingEl = document.getElementById('briefing-loading');
+  const contentEl = document.getElementById('briefing-content');
+  const subtitleEl = document.getElementById('briefing-subtitle');
+
+  const selectedDate = (dateSelect && dateSelect.value) ? dateSelect.value : '';
+  const selectedCam = (cameraInput && cameraInput.value) ? cameraInput.value : 'all';
+
+  loadingEl.style.display = 'block';
+  contentEl.innerHTML = '';
+  subtitleEl.textContent = `Menganalisis rangkuman keamanan untuk tanggal: ${selectedDate || 'Hari Ini'}...`;
+
+  try {
+    const res = await fetch('/api/ai/daily-briefing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: selectedDate, camera: selectedCam })
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const b = data.briefing;
+
+    loadingEl.style.display = 'none';
+    subtitleEl.textContent = b.title || 'Laporan Ringkasan Intelijen Keamanan SkyGuard';
+
+    const risk = b.overallRisk || 'Rendah';
+    let riskClass = 'badge-risk-rendah';
+    if (risk.toLowerCase().includes('sedang')) riskClass = 'badge-risk-sedang';
+    if (risk.toLowerCase().includes('tinggi')) riskClass = 'badge-risk-tinggi';
+
+    const highlightsHtml = (b.keyHighlights || []).map(h => `<li>${h}</li>`).join('');
+    const recHtml = (b.securityRecommendations || []).map(r => `<li>${r}</li>`).join('');
+
+    contentEl.innerHTML = `
+      <div class="briefing-card">
+        <div class="briefing-header-block">
+          <div class="briefing-stat">
+            <span class="stat-num">${b.totalEvents || 0}</span>
+            <span class="stat-desc">Total Kejadian Terverifikasi</span>
+          </div>
+          <div>
+            <span class="badge ${riskClass}" style="font-size:0.85rem;padding:0.35rem 0.75rem;">
+              Status Risiko: ${risk}
+            </span>
+          </div>
+        </div>
+
+        <div class="briefing-exec-summary">
+          <label style="font-size:0.75rem;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:0.05em;">
+            🛡️ Ringkasan Eksekutif Keamanan:
+          </label>
+          <p style="font-size:0.85rem;line-height:1.5;color:#f1f5f9;margin-top:0.35rem;">
+            ${b.executiveSummary || 'Tidak ada kejadian mencurigakan yang dilaporkan hari ini.'}
+          </p>
+          ${b.peakHours ? `<div style="font-size:0.75rem;color:#94a3b8;margin-top:0.5rem;">⏱️ <strong>Waktu Puncak Aktivitas:</strong> ${b.peakHours}</div>` : ''}
+        </div>
+
+        ${highlightsHtml ? `
+        <div class="briefing-exec-summary">
+          <label style="font-size:0.75rem;font-weight:700;color:#cbd5e1;text-transform:uppercase;">
+            🔍 Poin Pengamatan Kunci:
+          </label>
+          <ul class="briefing-list">
+            ${highlightsHtml}
+          </ul>
+        </div>
+        ` : ''}
+
+        ${recHtml ? `
+        <div class="briefing-exec-summary" style="border-color:rgba(56, 189, 248, 0.3);">
+          <label style="font-size:0.75rem;font-weight:700;color:#38bdf8;text-transform:uppercase;">
+            💡 Rekomendasi Tindakan Keamanan:
+          </label>
+          <ul class="briefing-list">
+            ${recHtml}
+          </ul>
+        </div>
+        ` : ''}
+      </div>
+    `;
+
+  } catch (err) {
+    console.error('Failed to load daily briefing:', err);
+    loadingEl.style.display = 'none';
+    contentEl.innerHTML = `
+      <div class="alert-error">
+        <strong>Gagal membuat laporan intelijen AI:</strong> ${err.message}.
+        Silakan periksa koneksi internet ke Gemini API.
+      </div>
+    `;
   }
 };
 
@@ -745,7 +956,7 @@ window.playSingleClip = function(key, camera, timeStr, sizeStr) {
   if (counter) counter.style.display = 'none';
 
   const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(key)}`;
-  title.textContent = `${camera} Recording (10 Detik)`;
+  title.textContent = `${camera} Recording (Clip)`;
   subtitle.textContent = `${timeStr} (${sizeStr})`;
   downloadBtn.href = streamUrl;
 
