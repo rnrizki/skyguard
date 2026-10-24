@@ -1,47 +1,38 @@
 /**
- * SkyGuard S3 Recordings Archive Controller
- * Unified Continuous Event/Session Playback, Frigate Radio Selector, Real Thumbnails & S3 Sync Verification
+ * SkyGuard Surveillance Recordings & Events Controller
+ * Native Frigate Tracked Object Details View, Seamless Unified Event Clips & 24/7 Archive
  */
+
+let currentPrimaryMode = 'events'; // 'events' (default) or 'archive'
+let loadedEvents = [];
+let loadedFiles = [];
+let loadedSessions = [];
+let activeCamera = 'all';
+let pendingCamera = 'all';
+let pendingCameraName = 'All Cameras';
 
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('recordings-filter-form');
   const dateSelect = document.getElementById('filter-date');
   const cameraInput = document.getElementById('filter-camera');
   const hourSelect = document.getElementById('filter-hour');
+  const labelSelect = document.getElementById('filter-label');
+
+  // Fields
+  const fieldFilterLabel = document.getElementById('field-filter-label');
+  const fieldFilterDate = document.getElementById('field-filter-date');
+  const fieldFilterHour = document.getElementById('field-filter-hour');
+  const archiveViewToggle = document.getElementById('archive-view-mode-toggle');
+
+  const resultsTitle = document.getElementById('results-title');
   const resultsCount = document.getElementById('results-count');
   const resultsEmpty = document.getElementById('results-empty');
+  const resultsEmptyMsg = document.getElementById('results-empty-msg');
   const resultsLoading = document.getElementById('results-loading');
+  const resultsLoadingMsg = document.getElementById('results-loading-msg');
   const clipsGrid = document.getElementById('clips-grid');
-  const modal = document.getElementById('video-modal');
 
-  // View Mode Controls (Video Utuh / Sesi vs Segmen 10s)
-  const btnModeSessions = document.getElementById('btn-mode-sessions');
-  const btnModeSegments = document.getElementById('btn-mode-segments');
-  let currentViewMode = 'sessions'; // default to unified continuous video sessions
-  let loadedFiles = [];
-  let loadedSessions = [];
-
-  if (btnModeSessions && btnModeSegments) {
-    btnModeSessions.addEventListener('click', () => {
-      if (currentViewMode !== 'sessions') {
-        currentViewMode = 'sessions';
-        btnModeSessions.classList.add('active');
-        btnModeSegments.classList.remove('active');
-        renderResults();
-      }
-    });
-
-    btnModeSegments.addEventListener('click', () => {
-      if (currentViewMode !== 'segments') {
-        currentViewMode = 'segments';
-        btnModeSegments.classList.add('active');
-        btnModeSessions.classList.remove('active');
-        renderResults();
-      }
-    });
-  }
-
-  // Frigate-Style Camera Popover Controls
+  // Frigate Popover Controls
   const cameraBtn = document.getElementById('camera-dropdown-btn');
   const cameraPopover = document.getElementById('camera-popover');
   const selectedCameraText = document.getElementById('selected-camera-text');
@@ -49,11 +40,32 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnApply = document.getElementById('btn-camera-apply');
   const btnReset = document.getElementById('btn-camera-reset');
 
-  let activeCamera = cameraInput.value || 'all';
-  let pendingCamera = activeCamera;
-  let pendingCameraName = 'All Cameras';
+  // Archive view mode toggle (sessions vs segments)
+  const btnModeSessions = document.getElementById('btn-mode-sessions');
+  const btnModeSegments = document.getElementById('btn-mode-segments');
+  let currentArchiveMode = 'sessions';
 
-  // Toggle Camera Popover
+  if (btnModeSessions && btnModeSegments) {
+    btnModeSessions.addEventListener('click', () => {
+      if (currentArchiveMode !== 'sessions') {
+        currentArchiveMode = 'sessions';
+        btnModeSessions.classList.add('active');
+        btnModeSegments.classList.remove('active');
+        renderArchiveResults();
+      }
+    });
+
+    btnModeSegments.addEventListener('click', () => {
+      if (currentArchiveMode !== 'segments') {
+        currentArchiveMode = 'segments';
+        btnModeSegments.classList.add('active');
+        btnModeSessions.classList.remove('active');
+        renderArchiveResults();
+      }
+    });
+  }
+
+  // Camera Popover Interaction
   if (cameraBtn && cameraPopover) {
     cameraBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -62,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
       cameraBtn.classList.toggle('open', !isVisible);
     });
 
-    // Close popover when clicking outside
     document.addEventListener('click', (e) => {
       if (!cameraPopover.contains(e.target) && !cameraBtn.contains(e.target)) {
         cameraPopover.style.display = 'none';
@@ -70,7 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Camera Radio Switch Selection
     radioItems.forEach(item => {
       item.addEventListener('click', () => {
         const camId = item.getAttribute('data-cam');
@@ -78,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingCamera = camId;
         pendingCameraName = camName;
 
-        // Update active UI switch
         radioItems.forEach(i => {
           const isSelected = i.getAttribute('data-cam') === camId;
           i.classList.toggle('active', isSelected);
@@ -88,7 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // Apply button
     if (btnApply) {
       btnApply.addEventListener('click', () => {
         activeCamera = pendingCamera;
@@ -96,11 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedCameraText.textContent = pendingCameraName;
         cameraPopover.style.display = 'none';
         cameraBtn.classList.remove('open');
-        searchRecordings();
+        triggerSearch();
       });
     }
 
-    // Reset button
     if (btnReset) {
       btnReset.addEventListener('click', () => {
         activeCamera = 'all';
@@ -118,24 +125,171 @@ document.addEventListener('DOMContentLoaded', () => {
 
         cameraPopover.style.display = 'none';
         cameraBtn.classList.remove('open');
-        searchRecordings();
+        triggerSearch();
       });
     }
   }
 
-  // Load available dates from ParadeDB / S3
-  loadAvailableDates();
+  // Handle Form Submit
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    triggerSearch();
+  });
 
+  function triggerSearch() {
+    if (currentPrimaryMode === 'events') {
+      loadTrackedEvents();
+    } else {
+      searchArchiveRecordings();
+    }
+  }
+
+  // Mode Switcher function (attached to window)
+  window.setPrimaryMode = function(mode) {
+    currentPrimaryMode = mode;
+    const tabEvents = document.getElementById('tab-mode-events');
+    const tabArchive = document.getElementById('tab-mode-archive');
+    const submitText = document.getElementById('btn-submit-text');
+
+    if (mode === 'events') {
+      tabEvents.classList.add('active');
+      tabArchive.classList.remove('active');
+      fieldFilterLabel.style.display = 'block';
+      fieldFilterDate.style.display = 'none';
+      fieldFilterHour.style.display = 'none';
+      archiveViewToggle.style.display = 'none';
+      resultsTitle.textContent = 'Tracked Object Events (Video Utuh)';
+      submitText.textContent = 'Cari Kejadian';
+      loadTrackedEvents();
+    } else {
+      tabArchive.classList.add('active');
+      tabEvents.classList.remove('active');
+      fieldFilterLabel.style.display = 'none';
+      fieldFilterDate.style.display = 'block';
+      fieldFilterHour.style.display = 'block';
+      archiveViewToggle.style.display = 'flex';
+      resultsTitle.textContent = '24/7 Continuous Recordings Archive';
+      submitText.textContent = 'Cari Rekaman 24/7';
+      if (!dateSelect.value) {
+        loadAvailableDates();
+      } else {
+        searchArchiveRecordings();
+      }
+    }
+  };
+
+  // LOAD TRACKED EVENTS (DEFAULT)
+  async function loadTrackedEvents() {
+    resultsLoading.style.display = 'block';
+    resultsLoadingMsg.textContent = 'Memuat video kejadian & deteksi objek dari Frigate...';
+    resultsEmpty.style.display = 'none';
+    clipsGrid.style.display = 'none';
+    resultsCount.textContent = 'Memuat Frigate Events...';
+
+    const cam = cameraInput.value || 'all';
+    const label = labelSelect ? labelSelect.value : 'all';
+
+    const queryParams = new URLSearchParams({ limit: '60' });
+    if (cam && cam !== 'all') queryParams.append('cameras', cam);
+    if (label && label !== 'all') queryParams.append('labels', label);
+
+    try {
+      const res = await fetch(`/api/events?${queryParams.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const events = await res.json();
+
+      resultsLoading.style.display = 'none';
+      loadedEvents = events || [];
+
+      if (!loadedEvents.length) {
+        resultsEmpty.style.display = 'block';
+        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek untuk kamera "${selectedCameraText.textContent}".`;
+        resultsCount.textContent = '0 kejadian ditemukan';
+        return;
+      }
+
+      resultsCount.textContent = `${loadedEvents.length} Kejadian Terdeteksi (Video Utuh)`;
+      renderTrackedEvents(loadedEvents);
+      clipsGrid.style.display = 'grid';
+
+    } catch (err) {
+      console.error('Failed to load events:', err);
+      resultsLoading.style.display = 'none';
+      resultsEmpty.style.display = 'block';
+      resultsEmptyMsg.textContent = `Gagal memuat kejadian dari Frigate: ${err.message}`;
+      resultsCount.textContent = 'Error';
+    }
+  }
+
+  function renderTrackedEvents(events) {
+    clipsGrid.innerHTML = '';
+
+    events.forEach(event => {
+      const card = document.createElement('div');
+      card.className = 'clip-card event-card';
+
+      const camName = event.camera.replace(/_/g, ' ').toUpperCase();
+      const scorePct = `${event.score}%`;
+      const durText = event.durationFormatted || 'Clip Utuh';
+      const timeDisplay = event.usStartTime || `${event.date} ${event.time}`;
+
+      card.innerHTML = `
+        <div class="clip-thumbnail" onclick="openTrackedObjectModal('${event.id}')">
+          <div class="clip-aspect-wrapper">
+            <img class="event-thumb-img" src="${event.thumbnailUrl}" loading="lazy" alt="${event.label}" onerror="this.src='/api/events/${event.id}/snapshot.jpg'">
+
+            <div class="clip-play-overlay">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+
+            <!-- Top Badges: Object type + Confidence score, Camera Name -->
+            <div class="clip-badges-top">
+              <span class="badge-event-label">${event.labelIcon} ${event.label} (${scorePct})</span>
+              <span class="badge-event-cam">${camName}</span>
+            </div>
+
+            <!-- Bottom Badges: Event Start Time & Full Duration -->
+            <div class="clip-badges-bottom">
+              <span class="clip-badge-time">⏱️ ${timeDisplay}</span>
+              <span class="clip-badge-dur" style="background:#0284c7;color:#fff;font-weight:700;">${durText}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="clip-info">
+          <div class="clip-meta">
+            <span class="clip-camera">${camName}</span>
+            <span class="clip-session-tag">🎯 Video Utuh (${durText})</span>
+          </div>
+
+          <div class="clip-actions">
+            <div class="clip-btn-group">
+              <button class="btn btn-primary btn-xs" onclick="openTrackedObjectModal('${event.id}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video Utuh
+              </button>
+              <a href="${event.clipUrl}" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh (MP4)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </a>
+            </div>
+            <span class="clip-date-tag" title="Tanggal Kejadian">
+              ${event.date}
+            </span>
+          </div>
+        </div>
+      `;
+
+      clipsGrid.appendChild(card);
+    });
+  }
+
+  // LOAD 24/7 ARCHIVE RECORDINGS
   async function loadAvailableDates() {
     try {
       const res = await fetch('/api/recordings/dates');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-
-      const syncBadge = document.getElementById('sync-badge');
-      if (syncBadge && data.source === 'paradedb') {
-        syncBadge.textContent = 'ParadeDB High-Speed Index (Active)';
-      }
 
       dateSelect.innerHTML = '';
       if (data.dates && data.dates.length > 0) {
@@ -145,14 +299,9 @@ document.addEventListener('DOMContentLoaded', () => {
           opt.textContent = d;
           dateSelect.appendChild(opt);
         });
-
-        // Trigger initial search for the latest date
-        searchRecordings();
+        searchArchiveRecordings();
       } else {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'No recorded dates found';
-        dateSelect.appendChild(opt);
+        dateSelect.innerHTML = '<option value="">No recorded dates found</option>';
       }
     } catch (err) {
       console.error('Failed to load dates:', err);
@@ -160,24 +309,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Handle filter submit
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    searchRecordings();
-  });
-
-  async function searchRecordings() {
+  async function searchArchiveRecordings() {
     const camera = cameraInput.value;
     const date = dateSelect.value;
     const hour = hourSelect.value;
 
     if (!date) return;
 
-    // Show loading UI
     resultsLoading.style.display = 'block';
+    resultsLoadingMsg.textContent = 'Memuat rekaman dari ParadeDB / S3...';
     resultsEmpty.style.display = 'none';
     clipsGrid.style.display = 'none';
-    resultsCount.textContent = 'Searching ParadeDB...';
+    resultsCount.textContent = 'Searching...';
 
     try {
       const queryParams = new URLSearchParams({ date });
@@ -189,236 +332,108 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
 
       resultsLoading.style.display = 'none';
-
       loadedFiles = data.files || [];
       loadedSessions = data.sessions || [];
 
       if (!loadedFiles.length) {
         resultsEmpty.style.display = 'block';
-        resultsEmpty.querySelector('p').textContent = `No video clips found for date ${date} with selected filters.`;
+        resultsEmptyMsg.textContent = `Tidak ada rekaman untuk tanggal ${date} dengan filter yang dipilih.`;
         resultsCount.textContent = '0 clips found';
         return;
       }
 
-      renderResults();
+      renderArchiveResults();
       clipsGrid.style.display = 'grid';
 
     } catch (err) {
-      console.error('Search failed:', err);
+      console.error('Archive search failed:', err);
       resultsLoading.style.display = 'none';
       resultsEmpty.style.display = 'block';
-      resultsEmpty.querySelector('p').textContent = `Error loading recordings: ${err.message}`;
+      resultsEmptyMsg.textContent = `Error loading recordings: ${err.message}`;
       resultsCount.textContent = 'Error';
     }
   }
 
-  function renderResults() {
-    if (currentViewMode === 'sessions') {
-      resultsCount.textContent = `${loadedSessions.length} Video Kejadian/Sesi Utuh (${loadedFiles.length} segmen)`;
-      renderSessions(loadedSessions);
+  function renderArchiveResults() {
+    if (currentArchiveMode === 'sessions') {
+      resultsCount.textContent = `${loadedSessions.length} Video Sesi Utuh (${loadedFiles.length} segmen)`;
+      renderArchiveSessions(loadedSessions);
     } else {
       resultsCount.textContent = `${loadedFiles.length} Segmen 10 Detik`;
-      renderClips(loadedFiles);
+      renderArchiveClips(loadedFiles);
     }
   }
 
-  // IntersectionObserver for lazy-loading video frame thumbnails
-  let videoObserver = null;
-  function initVideoObserver() {
-    if (videoObserver) {
-      videoObserver.disconnect();
-    }
-
-    videoObserver = new IntersectionObserver((entries, observer) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const video = entry.target;
-          if (video.dataset.src && !video.src) {
-            video.src = video.dataset.src;
-            video.load();
-
-            video.addEventListener('loadedmetadata', () => {
-              // Ensure frame paints immediately in Safari / WebKit
-              video.currentTime = 0.5;
-            });
-
-            video.onloadeddata = () => {
-              video.style.opacity = '1';
-            };
-
-            video.onerror = () => {
-              const card = video.closest('.clip-card');
-              if (card) {
-                const syncBadge = card.querySelector('.badge-sync');
-                if (syncBadge && !syncBadge.classList.contains('badge-s3-synced')) {
-                  syncBadge.className = 'badge-sync badge-s3-missing';
-                  syncBadge.textContent = '❌ Offline';
-                }
-              }
-            };
-          }
-          observer.unobserve(video);
-        }
-      });
-    }, {
-      rootMargin: '150px 0px'
-    });
-  }
-
-  // RENDER CONTINUOUS SESSIONS (VIDEO UTUH KEJADIAN)
-  function renderSessions(sessions) {
+  function renderArchiveSessions(sessions) {
     clipsGrid.innerHTML = '';
-    initVideoObserver();
-
     sessions.forEach((session, sIdx) => {
       const card = document.createElement('div');
       card.className = `clip-card session-card ${session.totalObjects > 0 ? 'has-event' : ''}`;
-
       const camName = session.camera.replace(/_/g, ' ').toUpperCase();
+      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(session.key)}`;
 
-      // Detection badges
       let badgesHtml = '';
-      if (session.totalObjects > 0) {
-        badgesHtml += `<span class="badge-obj" title="${session.totalObjects} deteksi objek dalam kejadian ini">🎯 ${session.totalObjects} obj</span>`;
-      }
-      if (session.hasMotion) {
-        badgesHtml += `<span class="badge-motion" title="Pergerakan terdeteksi">⚡ Motion</span>`;
-      }
+      if (session.totalObjects > 0) badgesHtml += `<span class="badge-obj">🎯 ${session.totalObjects} obj</span>`;
+      if (session.hasMotion) badgesHtml += `<span class="badge-motion">⚡ Motion</span>`;
 
-      // S3 Sync Status Badge
       const isSynced = session.s3Synced === true;
       const syncBadgeClass = isSynced ? 'badge-s3-synced' : 'badge-s3-pending';
       const syncBadgeText = isSynced ? '☁️ S3 Synced' : '⏳ Local (Pending S3)';
 
-      const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(session.key)}`;
-
       card.innerHTML = `
-        <div class="clip-thumbnail" onclick="playSession(${sIdx})">
+        <div class="clip-thumbnail" onclick="playArchiveSession(${sIdx})">
           <div class="clip-aspect-wrapper">
             <video class="clip-preview-video" preload="none" muted playsinline data-src="${streamUrl}#t=0.5"></video>
-
             <div class="clip-play-overlay">
-              <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
             </div>
-
-            <!-- Top Badges: Detections & S3 Sync -->
             <div class="clip-badges-top">
-              <div style="display:flex;gap:4px;align-items:center;">
-                ${badgesHtml}
-              </div>
-              <span class="badge-sync ${syncBadgeClass}">
-                ${syncBadgeText}
-              </span>
+              <div style="display:flex;gap:4px;align-items:center;">${badgesHtml}</div>
+              <span class="badge-sync ${syncBadgeClass}">${syncBadgeText}</span>
             </div>
-
-            <!-- Bottom Badges: Time Range & Full Duration -->
             <div class="clip-badges-bottom">
               <span class="clip-badge-time">⏱️ ${session.timeRange}</span>
               <span class="clip-badge-dur" style="background:#0284c7;color:#fff;font-weight:700;">${session.durationFormatted}</span>
             </div>
           </div>
         </div>
-
         <div class="clip-info">
           <div class="clip-meta">
             <span class="clip-camera">${camName}</span>
             <span class="clip-session-tag">🔗 ${session.segmentCount} Segmen Utuh</span>
           </div>
-
           <div class="clip-actions">
             <div class="clip-btn-group">
-              <button class="btn btn-primary btn-xs" onclick="playSession(${sIdx})">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video Utuh (${session.durationFormatted})
+              <button class="btn btn-primary btn-xs" onclick="playArchiveSession(${sIdx})">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video Utuh
               </button>
             </div>
-            <span class="clip-date-tag" title="Tanggal Rekaman">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
-              ${session.date}
-            </span>
+            <span class="clip-date-tag">${session.date}</span>
           </div>
         </div>
       `;
-
-      // Hover-to-preview video snippet
-      card.addEventListener('mouseenter', () => {
-        const video = card.querySelector('.clip-preview-video');
-        if (video && video.readyState >= 2) {
-          video.play().catch(() => {});
-        }
-      });
-
-      card.addEventListener('mouseleave', () => {
-        const video = card.querySelector('.clip-preview-video');
-        if (video) {
-          video.pause();
-          video.currentTime = 0.5;
-        }
-      });
-
       clipsGrid.appendChild(card);
-
-      const videoEl = card.querySelector('.clip-preview-video');
-      if (videoEl && videoObserver) {
-        videoObserver.observe(videoEl);
-      }
     });
   }
 
-  // RENDER RAW 10-SECOND SEGMENTS
-  function renderClips(files) {
+  function renderArchiveClips(files) {
     clipsGrid.innerHTML = '';
-    initVideoObserver();
-
     files.forEach(file => {
       const card = document.createElement('div');
       card.className = 'clip-card';
-
       const camName = file.camera.replace(/_/g, ' ').toUpperCase();
-
-      let badgesHtml = '';
-      if (file.objects && file.objects > 0) {
-        badgesHtml += `<span class="badge-obj" title="${file.objects} object detections">🎯 ${file.objects} obj</span>`;
-      }
-      if (file.motion && file.motion > 0) {
-        badgesHtml += `<span class="badge-motion" title="Motion detected">⚡ Motion</span>`;
-      }
-
-      const isSynced = file.s3Synced === true;
-      const syncBadgeClass = isSynced ? 'badge-s3-synced' : 'badge-s3-pending';
-      const syncBadgeText = isSynced ? '☁️ S3 Synced' : '⏳ Local (Pending S3)';
-
       const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(file.key)}`;
 
       card.innerHTML = `
-        <div class="clip-thumbnail" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+        <div class="clip-thumbnail" onclick="playSingleClip('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
           <div class="clip-aspect-wrapper">
             <video class="clip-preview-video" preload="none" muted playsinline data-src="${streamUrl}#t=0.5"></video>
-
             <div class="clip-play-overlay">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
             </div>
-
-            <div class="clip-badges-top">
-              <div style="display:flex;gap:4px;align-items:center;">
-                ${badgesHtml}
-              </div>
-              <span class="badge-sync ${syncBadgeClass}" data-key="${file.key}">
-                ${syncBadgeText}
-              </span>
-            </div>
-
             <div class="clip-badges-bottom">
               <span class="clip-badge-time">${file.time}</span>
-              ${file.duration ? `<span class="clip-badge-dur">${file.duration}s</span>` : ''}
+              <span class="clip-badge-dur">10s</span>
             </div>
           </div>
         </div>
@@ -428,71 +443,229 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="clip-size">${file.sizeFormatted}</span>
           </div>
           <div class="clip-actions">
-            <div class="clip-btn-group">
-              <button class="btn btn-primary btn-xs" onclick="playRecording('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Play 10s
-              </button>
-              <a href="${streamUrl}" download class="btn btn-secondary btn-xs" title="Download clip">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              </a>
-            </div>
-            <span class="clip-date-tag" title="Tanggal Rekaman">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
-              ${file.date}
-            </span>
+            <button class="btn btn-primary btn-xs" onclick="playSingleClip('${file.key}', '${camName}', '${file.date} ${file.time}', '${file.sizeFormatted}')">
+              Play 10s
+            </button>
+            <a href="${streamUrl}" download class="btn btn-secondary btn-xs">Download</a>
           </div>
         </div>
       `;
-
-      card.addEventListener('mouseenter', () => {
-        const video = card.querySelector('.clip-preview-video');
-        if (video && video.readyState >= 2) {
-          video.play().catch(() => {});
-        }
-      });
-
-      card.addEventListener('mouseleave', () => {
-        const video = card.querySelector('.clip-preview-video');
-        if (video) {
-          video.pause();
-          video.currentTime = 0.5;
-        }
-      });
-
       clipsGrid.appendChild(card);
-
-      const videoEl = card.querySelector('.clip-preview-video');
-      if (videoEl && videoObserver) {
-        videoObserver.observe(videoEl);
-      }
     });
   }
 
-  // Keyboard escape listener to close video modal
+  // Keyboard shortcut (ESC)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal.style.display !== 'none') {
+    if (e.key === 'Escape') {
+      window.closeTrackedModal();
       window.closeVideoModal();
     }
   });
 
-  // Export current session state
+  // Export state
   window._skyguardState = {
-    getSessions: () => loadedSessions,
-    getFiles: () => loadedFiles
+    getLoadedEvents: () => loadedEvents,
+    getLoadedSessions: () => loadedSessions
   };
+
+  // Start with Tracked Events
+  loadTrackedEvents();
 });
 
-// CONTINUOUS PLAYLIST ENGINE (PLAYBACK TANPA PUTUS)
+// ==========================================================
+// FRIGATE TRACKED OBJECT DETAILS MODAL ENGINE
+// ==========================================================
+let activeTrackedEvent = null;
+
+window.openTrackedObjectModal = async function(eventId) {
+  const events = window._skyguardState ? window._skyguardState.getLoadedEvents() : [];
+  let event = events.find(e => e.id === eventId);
+
+  // If not found in loaded array, fetch directly
+  if (!event) {
+    try {
+      const res = await fetch(`/api/events/${eventId}`);
+      if (res.ok) {
+        event = await res.json();
+      }
+    } catch (_) {}
+  }
+
+  if (!event) return;
+  activeTrackedEvent = event;
+
+  const modal = document.getElementById('tracked-object-modal');
+  const player = document.getElementById('tracked-video-player');
+  const downloadBtn = document.getElementById('tracked-download-btn');
+
+  // Video source & controls
+  const clipUrl = event.clipUrl || `/api/events/${event.id}/clip.mp4`;
+  downloadBtn.href = clipUrl;
+  player.src = clipUrl;
+  player.playbackRate = 1.0;
+  window.resetTrackedSpeedButtons();
+
+  // Populate Right Column Details
+  const iconEl = document.getElementById('dtl-obj-icon');
+  const labelEl = document.getElementById('dtl-obj-label');
+  const timeRangeEl = document.getElementById('dtl-obj-timerange');
+  const thumbImg = document.getElementById('dtl-thumb-img');
+
+  const label = event.label || 'Object';
+  const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
+  const icon = event.labelIcon || '🚶';
+
+  if (iconEl) iconEl.textContent = icon;
+  if (labelEl) labelEl.textContent = labelCap;
+  if (timeRangeEl) timeRangeEl.textContent = event.usTimeRange || `${event.date} ${event.timeRange}`;
+
+  if (thumbImg) {
+    thumbImg.src = event.thumbnailUrl || `/api/events/${event.id}/thumbnail.webp`;
+    thumbImg.onerror = () => {
+      thumbImg.src = `/api/events/${event.id}/snapshot.jpg`;
+    };
+  }
+
+  // Populate Vertical Timeline
+  const timelineContainer = document.getElementById('timeline-items');
+  if (timelineContainer) {
+    timelineContainer.innerHTML = '';
+
+    const scoreText = `Score: ${event.score || 75}%`;
+
+    // Step 1: Detected
+    const step1 = document.createElement('div');
+    step1.className = 'timeline-step';
+    step1.innerHTML = `
+      <div class="timeline-dot"></div>
+      <div class="timeline-step-title">${labelCap} detected</div>
+      <div class="timeline-step-meta">
+        <span class="timeline-score">${scoreText}</span>
+        <span class="timeline-step-time">${event.usStartTime || event.time}</span>
+      </div>
+    `;
+    timelineContainer.appendChild(step1);
+
+    // Step 2: Stationary (if applicable or stationary_time in data)
+    const isStationary = event.data && (event.data.stationary === true || event.data.stationary_time);
+    if (isStationary || (event.duration && event.duration > 20)) {
+      const statTime = event.data && event.data.stationary_time
+        ? formatUsTimestamp(event.data.stationary_time)
+        : formatUsTimestamp((event.startTime || 0) + 15);
+
+      const step2 = document.createElement('div');
+      step2.className = 'timeline-step';
+      step2.innerHTML = `
+        <div class="timeline-dot"></div>
+        <div class="timeline-step-title">${labelCap} became stationary</div>
+        <div class="timeline-step-meta">
+          <span class="timeline-score">${scoreText}</span>
+          <span class="timeline-step-time">${statTime}</span>
+        </div>
+      `;
+      timelineContainer.appendChild(step2);
+    }
+
+    // Step 3: Left / Departed
+    if (event.endTime && event.endTime > (event.startTime || 0)) {
+      const step3 = document.createElement('div');
+      step3.className = 'timeline-step';
+      step3.innerHTML = `
+        <div class="timeline-dot"></div>
+        <div class="timeline-step-title">${labelCap} left</div>
+        <div class="timeline-step-meta">
+          <span class="timeline-score">${scoreText}</span>
+          <span class="timeline-step-time">${event.usEndTime || ''}</span>
+        </div>
+      `;
+      timelineContainer.appendChild(step3);
+    } else {
+      const stepLive = document.createElement('div');
+      stepLive.className = 'timeline-step';
+      stepLive.innerHTML = `
+        <div class="timeline-dot" style="background:#22c55e;"></div>
+        <div class="timeline-step-title" style="color:#4ade80;">Currently active / in view</div>
+      `;
+      timelineContainer.appendChild(stepLive);
+    }
+  }
+
+  // Switch to Tracking Details tab by default
+  window.switchTrackedTab('details');
+
+  // Open Modal & Autoplay
+  modal.style.display = 'flex';
+  player.play().catch(e => console.warn('Autoplay prevented:', e));
+};
+
+function formatUsTimestamp(epochSec) {
+  if (!epochSec) return '';
+  const d = new Date(Number(epochSec) * 1000);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Jakarta'
+  }).format(d);
+}
+
+window.closeTrackedModal = function() {
+  const modal = document.getElementById('tracked-object-modal');
+  const player = document.getElementById('tracked-video-player');
+  activeTrackedEvent = null;
+  if (player) {
+    player.pause();
+    player.src = '';
+  }
+  if (modal) {
+    modal.style.display = 'none';
+  }
+};
+
+window.switchTrackedTab = function(tabName) {
+  const pillThumb = document.getElementById('tab-pill-thumb');
+  const pillDetails = document.getElementById('tab-pill-details');
+  const paneThumb = document.getElementById('tracked-pane-thumbnail');
+  const paneDetails = document.getElementById('tracked-pane-details');
+
+  if (tabName === 'thumbnail') {
+    pillThumb.classList.add('active');
+    pillDetails.classList.remove('active');
+    paneThumb.style.display = 'block';
+    paneDetails.style.display = 'none';
+  } else {
+    pillDetails.classList.add('active');
+    pillThumb.classList.remove('active');
+    paneDetails.style.display = 'block';
+    paneThumb.style.display = 'none';
+  }
+};
+
+window.setTrackedSpeed = function(speed) {
+  const player = document.getElementById('tracked-video-player');
+  if (player) player.playbackRate = speed;
+  document.querySelectorAll('.tracked-video-controls .speed-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent === `${speed.toFixed(1)}x`);
+  });
+};
+
+window.resetTrackedSpeedButtons = function() {
+  document.querySelectorAll('.tracked-video-controls .speed-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent === '1.0x');
+  });
+};
+
+// ==========================================================
+// 24/7 ARCHIVE FALLBACK MODAL ENGINE
+// ==========================================================
 let activeSession = null;
 let activeSegmentIndex = 0;
 
-window.playSession = function(sessionIdx) {
-  const sessions = window._skyguardState ? window._skyguardState.getSessions() : [];
+window.playArchiveSession = function(sessionIdx) {
+  const sessions = window._skyguardState ? window._skyguardState.getLoadedSessions() : [];
   const session = sessions[sessionIdx];
   if (!session || !session.segments || !session.segments.length) return;
 
@@ -522,7 +695,7 @@ function playSegmentInSession(idx) {
   const camName = activeSession.camera.replace(/_/g, ' ').toUpperCase();
   title.textContent = `${camName} - Kejadian / Sesi Utuh (${activeSession.timeRange})`;
   subtitle.textContent = `Durasi Total: ${activeSession.durationFormatted} • Ukuran: ${activeSession.sizeFormatted}`;
-  
+
   if (counter) {
     counter.textContent = `Segmen ${idx + 1} / ${activeSession.segments.length} (${seg.time})`;
   }
@@ -536,7 +709,6 @@ function playSegmentInSession(idx) {
 
   player.play().catch(e => console.warn('Modal autoplay blocked:', e));
 
-  // Seamless continuous playback: automatically play next segment when current ends!
   player.onended = () => {
     const autoNext = document.getElementById('chk-auto-next');
     if (!autoNext || autoNext.checked) {
@@ -559,8 +731,7 @@ window.playPrevSegment = function() {
   }
 };
 
-// Single clip playback (10s raw)
-window.playRecording = function(key, camera, timeStr, sizeStr) {
+window.playSingleClip = function(key, camera, timeStr, sizeStr) {
   activeSession = null;
   const modal = document.getElementById('video-modal');
   const player = document.getElementById('modal-video-player');
@@ -574,7 +745,6 @@ window.playRecording = function(key, camera, timeStr, sizeStr) {
   if (counter) counter.style.display = 'none';
 
   const streamUrl = `/api/recordings/stream?key=${encodeURIComponent(key)}`;
-
   title.textContent = `${camera} Recording (10 Detik)`;
   subtitle.textContent = `${timeStr} (${sizeStr})`;
   downloadBtn.href = streamUrl;
@@ -582,8 +752,6 @@ window.playRecording = function(key, camera, timeStr, sizeStr) {
   player.src = streamUrl;
   player.playbackRate = 1.0;
   window.resetSpeedButtons();
-
-  player.onended = null;
 
   modal.style.display = 'flex';
   player.play().catch(e => console.warn('Modal autoplay blocked:', e));
@@ -595,7 +763,6 @@ window.closeVideoModal = function() {
   activeSession = null;
   if (player) {
     player.pause();
-    player.onended = null;
     player.src = '';
   }
   if (modal) {
@@ -605,16 +772,14 @@ window.closeVideoModal = function() {
 
 window.setSpeed = function(speed) {
   const player = document.getElementById('modal-video-player');
-  if (player) {
-    player.playbackRate = speed;
-  }
-  document.querySelectorAll('.speed-btn').forEach(btn => {
+  if (player) player.playbackRate = speed;
+  document.querySelectorAll('#video-modal .speed-btn').forEach(btn => {
     btn.classList.toggle('active', btn.textContent === `${speed.toFixed(1)}x`);
   });
 };
 
 window.resetSpeedButtons = function() {
-  document.querySelectorAll('.speed-btn').forEach(btn => {
+  document.querySelectorAll('#video-modal .speed-btn').forEach(btn => {
     btn.classList.toggle('active', btn.textContent === '1.0x');
   });
 };

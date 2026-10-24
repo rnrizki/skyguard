@@ -7,14 +7,30 @@
           <circle cx="12" cy="12" r="10"></circle>
           <polyline points="12 6 12 12 16 14"></polyline>
         </svg>
-        S3 Cloud Recordings Archive
+        Surveillance Recordings & Events
       </h2>
-      <span class="badge badge-success" id="sync-badge">ParadeDB High-Speed Index</span>
+      <span class="badge badge-success" id="sync-badge">Frigate Event Engine (Active)</span>
     </div>
 
+    <!-- Mode Selector: Tracked Events (Default) vs 24/7 Full Archive -->
     <div class="toolbar-right">
-      <div class="s3-info-pill">
-        <span>Bucket: <strong>frigate/recordings</strong></span>
+      <div class="mode-switch-group">
+        <button type="button" class="mode-tab-btn active" id="tab-mode-events" onclick="setPrimaryMode('events')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          🎯 Kejadian / Tracked Objects (Utuh)
+        </button>
+        <button type="button" class="mode-tab-btn" id="tab-mode-archive" onclick="setPrimaryMode('archive')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          📁 Arsip 24/7 (ParadeDB / S3)
+        </button>
       </div>
     </div>
   </div>
@@ -63,16 +79,29 @@
         </div>
       </div>
 
-      <!-- Date Filter -->
-      <div class="form-field">
+      <!-- Object Label Filter (Active in Events Mode) -->
+      <div class="form-field" id="field-filter-label">
+        <label for="filter-label">Object Type</label>
+        <select id="filter-label" name="label" class="form-select">
+          <option value="all">All Objects (Person, Car, etc.)</option>
+          <option value="person">🚶 Person (Orang)</option>
+          <option value="car">🚗 Car (Mobil)</option>
+          <option value="motorcycle">🏍️ Motorcycle (Motor)</option>
+          <option value="dog">🐕 Dog (Anjing)</option>
+          <option value="cat">🐈 Cat (Kucing)</option>
+        </select>
+      </div>
+
+      <!-- Date Filter (Active in Archive Mode or Date Navigation) -->
+      <div class="form-field" id="field-filter-date" style="display: none;">
         <label for="filter-date">Date (YYYY-MM-DD)</label>
         <select id="filter-date" name="date" class="form-select">
           <option value="">Loading dates...</option>
         </select>
       </div>
 
-      <!-- Hour Filter -->
-      <div class="form-field">
+      <!-- Hour Filter (Active in Archive Mode) -->
+      <div class="form-field" id="field-filter-hour" style="display: none;">
         <label for="filter-hour">Hour (WIB)</label>
         <select id="filter-hour" name="hour" class="form-select">
           <option value="">All Hours (24H)</option>
@@ -105,12 +134,12 @@
 
       <!-- Action Button -->
       <div class="form-field form-field-btn">
-        <button type="submit" class="btn btn-primary btn-block">
+        <button type="submit" class="btn btn-primary btn-block" id="btn-filter-submit">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          Search Clips
+          <span id="btn-submit-text">Cari Kejadian</span>
         </button>
       </div>
     </form>
@@ -120,26 +149,23 @@
   <div class="results-container">
     <div class="results-header">
       <div class="results-title-group">
-        <h3 id="results-title">Recorded Video Clips</h3>
-        <span id="results-count" class="badge badge-secondary">0 files found</span>
+        <h3 id="results-title">Tracked Object Events</h3>
+        <span id="results-count" class="badge badge-secondary">Memuat kejadian...</span>
       </div>
 
-      <!-- View Mode Selector (Video Utuh / Sesi vs Segmen 10s) -->
-      <div class="view-mode-toggle">
+      <!-- Archive View Mode Selector (shown only in Archive mode) -->
+      <div class="view-mode-toggle" id="archive-view-mode-toggle" style="display: none;">
         <button type="button" class="view-btn active" data-mode="sessions" id="btn-mode-sessions" title="Tampilkan kejadian & sesi rekaman utuh">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          Video Utuh (Kejadian & Sesi)
+          Video Utuh (Sesi)
         </button>
         <button type="button" class="view-btn" data-mode="segments" id="btn-mode-segments" title="Tampilkan semua pecahan segmen 10 detik">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="8" y1="6" x2="21" y2="6"></line>
             <line x1="8" y1="12" x2="21" y2="12"></line>
             <line x1="8" y1="18" x2="21" y2="18"></line>
-            <line x1="3" y1="6" x2="3.01" y2="6"></line>
-            <line x1="3" y1="12" x2="3.01" y2="12"></line>
-            <line x1="3" y1="18" x2="3.01" y2="18"></line>
           </svg>
           Segmen 10 Detik
         </button>
@@ -153,21 +179,103 @@
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
-      <p>Select a date and click <strong>Search S3</strong> to view recorded video clips.</p>
+      <p id="results-empty-msg">Tidak ada rekaman atau kejadian yang ditemukan untuk filter yang dipilih.</p>
     </div>
 
     <!-- Loading State -->
     <div id="results-loading" class="loading-state" style="display: none;">
       <div class="spinner"></div>
-      <p>Fetching recordings index from S3 storage...</p>
+      <p id="results-loading-msg">Memuat data video kejadian dari Frigate NVR...</p>
     </div>
 
-    <!-- Video Clips Grid -->
+    <!-- Video Grid -->
     <div id="clips-grid" class="clips-grid" style="display: none;"></div>
   </div>
 </div>
 
-<!-- Video Player Modal (Strict 16:9) -->
+<!-- ========================================================== -->
+<!-- FRIGATE TRACKED OBJECT DETAILS MODAL (Exact Matching UI)   -->
+<!-- ========================================================== -->
+<div id="tracked-object-modal" class="modal" style="display: none;">
+  <div class="modal-overlay" onclick="closeTrackedModal()"></div>
+  <div class="modal-dialog tracked-modal-dialog">
+    <!-- Modal Header -->
+    <div class="modal-header">
+      <h3 class="modal-title">Tracked Object Details</h3>
+      <button class="modal-close-btn" onclick="closeTrackedModal()">&times;</button>
+    </div>
+
+    <!-- 2-Column Body: Left Video, Right Details Timeline -->
+    <div class="tracked-modal-body">
+      <!-- Left Column: Unified Video Player & Controls -->
+      <div class="tracked-video-col">
+        <div class="tracked-video-wrapper">
+          <video id="tracked-video-player" controls autoplay playsinline class="modal-video"></video>
+        </div>
+
+        <div class="tracked-video-controls">
+          <div class="playback-controls">
+            <label>Speed:</label>
+            <button class="speed-btn active" onclick="setTrackedSpeed(1)">1.0x</button>
+            <button class="speed-btn" onclick="setTrackedSpeed(1.5)">1.5x</button>
+            <button class="speed-btn" onclick="setTrackedSpeed(2)">2.0x</button>
+          </div>
+
+          <a id="tracked-download-btn" href="#" download class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download Clip (MP4)
+          </a>
+        </div>
+      </div>
+
+      <!-- Right Column: Frigate Tabs (Thumbnail / Tracking Details) & Timeline -->
+      <div class="tracked-details-col">
+        <!-- Top Tab Pills -->
+        <div class="tracked-tabs-nav">
+          <button type="button" class="tracked-nav-pill" id="tab-pill-thumb" onclick="switchTrackedTab('thumbnail')">Thumbnail</button>
+          <button type="button" class="tracked-nav-pill active" id="tab-pill-details" onclick="switchTrackedTab('details')">Tracking Details</button>
+        </div>
+
+        <!-- Tracking Details Pane -->
+        <div id="tracked-pane-details" class="tracked-pane">
+          <!-- Event Header: Icon, Label, US Date Time Range -->
+          <div class="event-meta-header">
+            <div class="event-meta-title">
+              <span id="dtl-obj-icon" class="event-icon">🚶</span>
+              <span id="dtl-obj-label" class="event-label-text">Person</span>
+            </div>
+            <div id="dtl-obj-timerange" class="event-timerange-text">
+              Oct 24, 10:01:10 PM - Oct 24, 10:04:45 PM
+            </div>
+          </div>
+
+          <!-- Vertical Tracking Timeline -->
+          <div class="tracking-timeline-wrapper">
+            <div class="timeline-line"></div>
+            <div id="timeline-items" class="timeline-items">
+              <!-- Dynamically populated timeline dots -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Thumbnail Pane -->
+        <div id="tracked-pane-thumbnail" class="tracked-pane" style="display: none;">
+          <div class="tracked-thumbnail-wrapper">
+            <img id="dtl-thumb-img" src="" alt="Tracked Object Snapshot" class="tracked-thumb-img">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================== -->
+<!-- 24/7 ARCHIVE PLAYBACK MODAL (Continuous Session Fallback)   -->
+<!-- ========================================================== -->
 <div id="video-modal" class="modal" style="display: none;">
   <div class="modal-overlay" onclick="closeVideoModal()"></div>
   <div class="modal-dialog">
@@ -183,7 +291,6 @@
     </div>
 
     <div class="modal-body">
-      <!-- 16:9 Video Player -->
       <div class="modal-video-wrapper">
         <video id="modal-video-player" controls autoplay playsinline class="modal-video"></video>
       </div>
@@ -198,7 +305,6 @@
         <button class="speed-btn" onclick="setSpeed(4)">4.0x</button>
       </div>
 
-      <!-- Continuous Session Playback Navigation -->
       <div class="session-nav-controls" id="modal-session-nav" style="display: none;">
         <button type="button" class="btn btn-secondary btn-sm" id="btn-prev-segment" onclick="playPrevSegment()" title="Segmen Sebelumnya">
           ⏮ Sebelumnya

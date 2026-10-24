@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'SkyGuard2026!';
 const GO2RTC_URL = process.env.GO2RTC_URL || 'http://localhost:1984';
+const FRIGATE_URL = process.env.FRIGATE_URL || 'http://100.65.136.42:5000';
 
 // S3 Storage Credentials
 const S3_ENDPOINT = process.env.S3_ENDPOINT || 'https://s3api1.skyconnection.id';
@@ -333,6 +334,229 @@ app.get('/api/go2rtc/frame.jpeg', requireAuth, async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (err) {
     res.status(502).send(`Error fetching frame: ${err.message}`);
+  }
+});
+
+// --- API: FRIGATE TRACKED EVENTS PROXY ---
+// List events with metadata
+app.get('/api/events', requireAuth, async (req, res) => {
+  try {
+    const { camera, cameras, limit, label, labels, before, after } = req.query;
+    const params = new URLSearchParams();
+
+    const cam = camera || cameras;
+    if (cam && cam !== 'all') {
+      params.append('cameras', cam);
+    }
+    if (limit) params.append('limit', limit);
+    else params.append('limit', '60');
+
+    const lbl = label || labels;
+    if (lbl && lbl !== 'all') {
+      params.append('labels', lbl);
+    }
+    if (before) params.append('before', before);
+    if (after) params.append('after', after);
+
+    const frigateApiUrl = `${FRIGATE_URL}/api/events?${params.toString()}`;
+    const fRes = await globalThis.fetch(frigateApiUrl);
+    if (!fRes.ok) {
+      return res.status(fRes.status).json({ error: 'Frigate events API error', status: fRes.status });
+    }
+    const events = await fRes.json();
+
+    const formatted = events.map(e => {
+      const startTime = Number(e.start_time) || 0;
+      const endTime = e.end_time ? Number(e.end_time) : null;
+      const duration = endTime ? Math.max(0, Math.round(endTime - startTime)) : 0;
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      const durationFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      const startDate = startTime ? new Date(startTime * 1000) : new Date();
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(startDate);
+      const timeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(startDate);
+
+      const usStartStr = new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Jakarta'
+      }).format(startDate);
+
+      let endTimeStr = '';
+      let usEndStr = '';
+      if (endTime) {
+        const endDate = new Date(endTime * 1000);
+        endTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(endDate);
+        usEndStr = new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Jakarta'
+        }).format(endDate);
+      }
+
+      const rawScore = e.top_score || (e.data && e.data.top_score) || (e.data && e.data.score) || 0.7;
+      const scoreNum = Math.round(Number(rawScore) * 100);
+
+      // Icon for common object labels
+      const iconMap = {
+        person: '🚶',
+        car: '🚗',
+        motorcycle: '🏍️',
+        bicycle: '🚲',
+        dog: '🐕',
+        cat: '🐈',
+        bus: '🚌',
+        truck: '🚚'
+      };
+      const labelIcon = iconMap[e.label] || '🎯';
+
+      return {
+        id: e.id,
+        camera: e.camera,
+        label: e.label,
+        labelIcon: labelIcon,
+        subLabel: e.sub_label,
+        startTime,
+        endTime,
+        duration,
+        durationFormatted,
+        score: scoreNum,
+        hasClip: e.has_clip !== false,
+        hasSnapshot: e.has_snapshot === true,
+        date: dateStr,
+        time: timeStr,
+        usStartTime: usStartStr,
+        usEndTime: usEndStr,
+        timeRange: endTimeStr ? `${timeStr} - ${endTimeStr}` : `${timeStr} (In progress)`,
+        usTimeRange: usEndStr ? `${usStartStr} - ${usEndStr}` : `${usStartStr} (In progress)`,
+        thumbnailUrl: `/api/events/${e.id}/thumbnail.webp`,
+        snapshotUrl: `/api/events/${e.id}/snapshot.jpg`,
+        clipUrl: `/api/events/${e.id}/clip.mp4`,
+        data: e.data || {}
+      };
+    });
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Failed to proxy Frigate events:', err);
+    res.status(502).json({ error: 'Failed to retrieve Frigate events', details: err.message });
+  }
+});
+
+// Single event details
+app.get('/api/events/:id', requireAuth, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
+    if (!fRes.ok) return res.status(fRes.status).send('Event not found');
+    const data = await fRes.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch event detail', details: err.message });
+  }
+});
+
+// Event Thumbnail Proxy
+app.get('/api/events/:id/thumbnail.webp', requireAuth, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/thumbnail.webp`);
+    if (fRes.ok) {
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const buffer = await fRes.arrayBuffer();
+      return res.send(Buffer.from(buffer));
+    }
+
+    // Fallback: try snapshot if webp thumbnail is missing
+    const snapRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/snapshot.jpg`);
+    if (snapRes.ok) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const buffer = await snapRes.arrayBuffer();
+      return res.send(Buffer.from(buffer));
+    }
+
+    res.status(fRes.status).send('Thumbnail not available');
+  } catch (err) {
+    res.status(502).send('Error fetching thumbnail');
+  }
+});
+
+// Event Snapshot Proxy
+app.get('/api/events/:id/snapshot.jpg', requireAuth, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/snapshot.jpg`);
+    if (fRes.ok) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const buffer = await fRes.arrayBuffer();
+      return res.send(Buffer.from(buffer));
+    }
+
+    // Fallback: thumbnail
+    const thumbRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/thumbnail.webp`);
+    if (thumbRes.ok) {
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      const buffer = await thumbRes.arrayBuffer();
+      return res.send(Buffer.from(buffer));
+    }
+
+    res.status(fRes.status).send('Snapshot not available');
+  } catch (err) {
+    res.status(502).send('Error fetching snapshot');
+  }
+});
+
+// Event Clip Stream (MP4 with Range support)
+app.get('/api/events/:id/clip.mp4', requireAuth, async (req, res) => {
+  try {
+    const eventId = req.params.id;
+    const range = req.headers.range;
+    const fetchHeaders = {};
+    if (range) fetchHeaders['Range'] = range;
+
+    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/clip.mp4`, {
+      headers: fetchHeaders
+    });
+
+    if (fRes.ok || fRes.status === 206) {
+      const headers = {
+        'Content-Type': fRes.headers.get('content-type') || 'video/mp4',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-cache'
+      };
+      if (fRes.headers.get('content-range')) headers['Content-Range'] = fRes.headers.get('content-range');
+      if (fRes.headers.get('content-length')) headers['Content-Length'] = fRes.headers.get('content-length');
+
+      res.writeHead(fRes.status, headers);
+      const { Readable } = require('stream');
+      const reader = fRes.body.getReader();
+      const readableStream = new Readable({
+        async read() {
+          const { done, value } = await reader.read();
+          if (done) this.push(null);
+          else this.push(Buffer.from(value));
+        }
+      });
+      return readableStream.pipe(res);
+    }
+
+    res.status(fRes.status).send('Clip not available on Frigate');
+  } catch (err) {
+    console.error('Error streaming event clip:', err);
+    res.status(502).send(`Error streaming event clip: ${err.message}`);
   }
 });
 
