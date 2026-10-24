@@ -524,7 +524,9 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
   // Video source & controls
   const clipUrl = event.clipUrl || `/api/events/${event.id}/clip.mp4`;
   downloadBtn.href = clipUrl;
+  player.muted = true;
   player.src = clipUrl;
+  player.load();
   player.playbackRate = 1.0;
   window.resetTrackedSpeedButtons();
 
@@ -620,7 +622,10 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
 
   // Open Modal & Autoplay
   modal.style.display = 'flex';
-  player.play().catch(e => console.warn('Autoplay prevented:', e));
+  const playPromise = player.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(e => console.warn('Autoplay prevented by browser:', e));
+  }
 };
 
 function formatUsTimestamp(epochSec) {
@@ -643,7 +648,8 @@ window.closeTrackedModal = function() {
   activeTrackedEvent = null;
   if (player) {
     player.pause();
-    player.src = '';
+    player.removeAttribute('src');
+    player.load();
   }
   if (modal) {
     modal.style.display = 'none';

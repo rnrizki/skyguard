@@ -2,6 +2,7 @@ const express = require('express');
 const { engine } = require('express-handlebars');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const fs = require('fs');
 const { S3Client, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { Pool } = require('pg');
 
@@ -734,44 +735,91 @@ app.get('/api/events/:id/snapshot.jpg', requireAuth, async (req, res) => {
   }
 });
 
-// Event Clip Stream (MP4 with Range support)
+// --- EVENT CLIP CACHE & STREAMING (Full RFC 7233 Byte-Range & Safari Compatibility) ---
+const CLIPS_CACHE_DIR = path.join('/tmp', 'skyguard_clips');
+if (!fs.existsSync(CLIPS_CACHE_DIR)) {
+  try {
+    fs.mkdirSync(CLIPS_CACHE_DIR, { recursive: true });
+  } catch (_) {}
+}
+
+const downloadingClips = new Map();
+
+function cleanOldClipsCache() {
+  try {
+    const files = fs.readdirSync(CLIPS_CACHE_DIR);
+    if (files.length > 120) {
+      const stats = files.map(file => {
+        const full = path.join(CLIPS_CACHE_DIR, file);
+        return { file: full, time: fs.statSync(full).mtimeMs };
+      }).sort((a, b) => a.time - b.time);
+      for (let i = 0; i < 40; i++) {
+        if (stats[i]) {
+          try { fs.unlinkSync(stats[i].file); } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+async function getOrFetchEventClip(eventId) {
+  const filePath = path.join(CLIPS_CACHE_DIR, `${eventId}.mp4`);
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > 1000) {
+        return filePath;
+      }
+    } catch (_) {}
+  }
+
+  if (downloadingClips.has(eventId)) {
+    return downloadingClips.get(eventId);
+  }
+
+  const downloadTask = (async () => {
+    try {
+      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/clip.mp4`);
+      if (!fRes.ok) {
+        throw new Error(`Frigate returned HTTP ${fRes.status}`);
+      }
+
+      const buffer = Buffer.from(await fRes.arrayBuffer());
+      if (buffer.length < 100) {
+        throw new Error('Video clip data too small or empty');
+      }
+
+      const tmpFile = `${filePath}.tmp.${Date.now()}`;
+      fs.writeFileSync(tmpFile, buffer);
+      fs.renameSync(tmpFile, filePath);
+      cleanOldClipsCache();
+      return filePath;
+    } finally {
+      downloadingClips.delete(eventId);
+    }
+  })();
+
+  downloadingClips.set(eventId, downloadTask);
+  return downloadTask;
+}
+
+// Event Clip Stream (MP4 with RFC 7233 Range support for Safari / Chrome / Mobile)
 app.get('/api/events/:id/clip.mp4', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
-    const range = req.headers.range;
-    const fetchHeaders = {};
-    if (range) fetchHeaders['Range'] = range;
+    const filePath = await getOrFetchEventClip(eventId);
 
-    const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/clip.mp4`, {
-      headers: fetchHeaders
+    res.sendFile(filePath, {
+      acceptRanges: true,
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Cache-Control': 'public, max-age=3600'
+      }
     });
-
-    if (fRes.ok || fRes.status === 206) {
-      const headers = {
-        'Content-Type': fRes.headers.get('content-type') || 'video/mp4',
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-cache'
-      };
-      if (fRes.headers.get('content-range')) headers['Content-Range'] = fRes.headers.get('content-range');
-      if (fRes.headers.get('content-length')) headers['Content-Length'] = fRes.headers.get('content-length');
-
-      res.writeHead(fRes.status, headers);
-      const { Readable } = require('stream');
-      const reader = fRes.body.getReader();
-      const readableStream = new Readable({
-        async read() {
-          const { done, value } = await reader.read();
-          if (done) this.push(null);
-          else this.push(Buffer.from(value));
-        }
-      });
-      return readableStream.pipe(res);
-    }
-
-    res.status(fRes.status).send('Clip not available on Frigate');
   } catch (err) {
-    console.error('Error streaming event clip:', err);
-    res.status(502).send(`Error streaming event clip: ${err.message}`);
+    console.error(`Error streaming event clip ${req.params.id}:`, err.message);
+    res.status(404).send(`Clip not available: ${err.message}`);
   }
 });
 
