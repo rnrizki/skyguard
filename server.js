@@ -474,7 +474,11 @@ app.get('/api/events', requireAuth, async (req, res) => {
 const aiAnalysisCache = new Map();
 
 async function requestGeminiGenerate(parts) {
-  const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured in environment');
+  }
+
+  const models = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
   let lastError = null;
 
   for (const model of models) {
@@ -610,6 +614,27 @@ app.post('/api/ai/daily-briefing', requireAuth, async (req, res) => {
       const dur = e.end_time ? (e.end_time - e.start_time) : 0;
       return dur >= 3;
     });
+
+    if (validEvents.length === 0) {
+      return res.json({
+        success: true,
+        briefing: {
+          title: `Laporan Intelijen Keamanan SkyGuard - ${targetDate}`,
+          totalEvents: 0,
+          overallRisk: 'Rendah',
+          executiveSummary: `Kondisi aman dan kondusif. Tidak ada rekaman kejadian pergerakan mencurigakan yang terdeteksi pada tanggal ${targetDate}.`,
+          peakHours: 'Nihil / Tenang',
+          keyHighlights: [
+            'Tidak ada objek (orang/kendaraan) yang melanggar batas pemantauan.',
+            'Semua feed kamera beroperasi normal tanpa peringatan bahaya.'
+          ],
+          securityRecommendations: [
+            'Pertahankan pemantauan berkala pada jam malam.',
+            'Pastikan konektivitas kamera dan sinkronisasi cloud tetap aktif.'
+          ]
+        }
+      });
+    }
 
     const promptText = `Kamu adalah SkyGuard AI - Chief Security Intelligence Analyst.
 Buat laporan ringkasan keamanan eksekutif ("Daily Surveillance Intelligence Briefing") untuk tanggal ${targetDate} WIB:
