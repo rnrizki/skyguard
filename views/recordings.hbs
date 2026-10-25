@@ -193,6 +193,25 @@
 
     <!-- Video Grid -->
     <div id="clips-grid" class="clips-grid" style="display: none;"></div>
+
+    <!-- Modern Events Pagination Controls -->
+    <div id="events-pagination-container" class="events-pagination-bar" style="display: none;">
+      <div class="pagination-info">
+        <span id="pagination-info-text">Menampilkan halaman 1</span>
+      </div>
+      <div class="pagination-buttons">
+        <button type="button" id="btn-page-first" class="pag-btn" title="Halaman Pertama">⏮ Pertama</button>
+        <button type="button" id="btn-page-prev" class="pag-btn" title="Halaman Sebelumnya">◀ Sebelumnya</button>
+        <div id="pagination-numbers" class="pag-numbers"></div>
+        <button type="button" id="btn-page-next" class="pag-btn" title="Halaman Selanjutnya">Selanjutnya ▶</button>
+        <button type="button" id="btn-page-last" class="pag-btn" title="Halaman Terakhir">Terakhir ⏭</button>
+      </div>
+      <div class="pagination-jump">
+        <span>Ke Hal:</span>
+        <input type="number" id="input-page-jump" min="1" max="1" value="1" class="pag-jump-input">
+        <button type="button" id="btn-page-jump" class="pag-jump-btn">Buka</button>
+      </div>
+    </div>
   </div>
 </div>
 

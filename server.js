@@ -343,18 +343,52 @@ app.get('/api/go2rtc/frame.jpeg', requireAuth, async (req, res) => {
 });
 
 // --- API: FRIGATE TRACKED EVENTS PROXY ---
-// List events with metadata
+// Cached Daily Event Summary for instantaneous pagination count
+let cachedEventSummary = null;
+let lastSummaryFetch = 0;
+let isFetchingSummary = false;
+
+async function getOrFetchEventSummary() {
+  const now = Date.now();
+  if (cachedEventSummary && (now - lastSummaryFetch < 120000)) {
+    return cachedEventSummary;
+  }
+  if (isFetchingSummary && cachedEventSummary) {
+    return cachedEventSummary;
+  }
+  isFetchingSummary = true;
+  try {
+    const res = await globalThis.fetch(`${FRIGATE_URL}/api/events/summary?timezone=Asia/Jakarta`);
+    if (res.ok) {
+      cachedEventSummary = await res.json();
+      lastSummaryFetch = now;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch events summary:', err.message);
+  } finally {
+    isFetchingSummary = false;
+  }
+  return cachedEventSummary || [];
+}
+
+// List events with metadata and pagination
 app.get('/api/events', requireAuth, async (req, res) => {
   try {
-    const { camera, cameras, limit, label, labels, before, after, date } = req.query;
+    const { camera, cameras, label, labels, before, after, date, rawArray } = req.query;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
+    const offset = (page - 1) * limit;
+
     const params = new URLSearchParams();
 
     const cam = camera || cameras;
     if (cam && cam !== 'all') {
       params.append('cameras', cam);
     }
-    if (limit) params.append('limit', limit);
-    else params.append('limit', '100');
+
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    params.append('min_length', '3'); // Filter in SQLite: exclude events < 3 seconds
 
     const lbl = label || labels;
     if (lbl && lbl !== 'all') {
@@ -362,7 +396,9 @@ app.get('/api/events', requireAuth, async (req, res) => {
     }
 
     // Date filtering (YYYY-MM-DD in Asia/Jakarta GMT+7)
+    let filterDateStr = '';
     if (date && date !== 'all' && date !== '') {
+      filterDateStr = date;
       const startDay = Math.floor(new Date(`${date}T00:00:00+07:00`).getTime() / 1000);
       const endDay = Math.floor(new Date(`${date}T23:59:59+07:00`).getTime() / 1000);
       if (!after && !isNaN(startDay)) params.append('after', String(startDay));
@@ -463,7 +499,43 @@ app.get('/api/events', requireAuth, async (req, res) => {
       };
     }).filter(Boolean);
 
-    res.json(formatted);
+    if (rawArray === 'true') {
+      return res.json(formatted);
+    }
+
+    // Calculate total count using cached daily summary
+    let totalCount = null;
+    try {
+      const summary = await getOrFetchEventSummary();
+      if (summary && summary.length > 0) {
+        let filtered = summary;
+        if (filterDateStr) {
+          filtered = filtered.filter(item => item.day === filterDateStr);
+        }
+        if (cam && cam !== 'all') {
+          filtered = filtered.filter(item => item.camera === cam);
+        }
+        if (lbl && lbl !== 'all') {
+          filtered = filtered.filter(item => item.label === lbl);
+        }
+        totalCount = filtered.reduce((acc, cur) => acc + (Number(cur.count) || 0), 0);
+      }
+    } catch (_) {}
+
+    const effectiveTotal = totalCount !== null ? totalCount : (formatted.length < limit ? offset + formatted.length : offset + limit * 2);
+    const totalPages = Math.max(1, Math.ceil(effectiveTotal / limit));
+
+    res.json({
+      events: formatted,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages,
+        hasNext: page < totalPages && formatted.length === limit,
+        hasPrev: page > 1
+      }
+    });
   } catch (err) {
     console.error('Failed to proxy Frigate events:', err);
     res.status(502).json({ error: 'Failed to retrieve Frigate events', details: err.message });

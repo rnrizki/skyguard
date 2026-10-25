@@ -175,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fieldFilterDate.style.display = 'block'; // ALWAYS VISIBLE
       fieldFilterHour.style.display = 'block';
       archiveViewToggle.style.display = 'flex';
+      if (paginationContainer) paginationContainer.style.display = 'none';
       resultsTitle.textContent = '24/7 Continuous Recordings Archive';
       submitText.textContent = 'Cari Rekaman 24/7';
       searchArchiveRecordings();
@@ -204,19 +205,161 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // LOAD TRACKED EVENTS (DEFAULT)
-  async function loadTrackedEvents() {
+  // Pagination State for Tracked Events
+  let currentEventPage = 1;
+  const eventPageLimit = 30;
+  let totalEventPages = 1;
+  let totalEventCount = 0;
+
+  // Pagination Elements
+  const paginationContainer = document.getElementById('events-pagination-container');
+  const paginationInfoText = document.getElementById('pagination-info-text');
+  const btnPageFirst = document.getElementById('btn-page-first');
+  const btnPagePrev = document.getElementById('btn-page-prev');
+  const btnPageNext = document.getElementById('btn-page-next');
+  const btnPageLast = document.getElementById('btn-page-last');
+  const paginationNumbers = document.getElementById('pagination-numbers');
+  const inputPageJump = document.getElementById('input-page-jump');
+  const btnPageJump = document.getElementById('btn-page-jump');
+
+  if (btnPageFirst) btnPageFirst.addEventListener('click', () => goToPage(1));
+  if (btnPagePrev) btnPagePrev.addEventListener('click', () => goToPage(currentEventPage - 1));
+  if (btnPageNext) btnPageNext.addEventListener('click', () => goToPage(currentEventPage + 1));
+  if (btnPageLast) btnPageLast.addEventListener('click', () => goToPage(totalEventPages));
+  if (btnPageJump && inputPageJump) {
+    btnPageJump.addEventListener('click', () => {
+      const p = parseInt(inputPageJump.value, 10);
+      if (!isNaN(p) && p >= 1 && p <= totalEventPages) {
+        goToPage(p);
+      }
+    });
+    inputPageJump.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        btnPageJump.click();
+      }
+    });
+  }
+
+  function goToPage(page) {
+    if (page < 1 || page > totalEventPages) return;
+    loadTrackedEvents(page);
+    const resultsHeader = document.querySelector('.results-header');
+    if (resultsHeader) {
+      window.scrollTo({
+        top: resultsHeader.offsetTop - 70,
+        behavior: 'smooth'
+      });
+    }
+  }
+
+  function renderEventPagination(pagination, currentCount) {
+    if (!paginationContainer) return;
+
+    if (currentPrimaryMode !== 'events') {
+      paginationContainer.style.display = 'none';
+      return;
+    }
+
+    currentEventPage = pagination.page || 1;
+    totalEventPages = pagination.totalPages || 1;
+    totalEventCount = pagination.total !== null && pagination.total !== undefined ? pagination.total : currentCount;
+
+    if (totalEventPages <= 1 && currentCount <= 0) {
+      paginationContainer.style.display = 'none';
+      return;
+    }
+
+    paginationContainer.style.display = 'flex';
+
+    const startIdx = ((currentEventPage - 1) * eventPageLimit) + 1;
+    const endIdx = startIdx + currentCount - 1;
+    if (pagination.total) {
+      paginationInfoText.innerHTML = `Menampilkan <strong>${startIdx} - ${endIdx}</strong> dari <strong>${pagination.total.toLocaleString('id-ID')}</strong> video kejadian`;
+    } else {
+      paginationInfoText.innerHTML = `Halaman <strong>${currentEventPage}</strong> dari <strong>${totalEventPages}</strong>`;
+    }
+
+    // Button disabled states
+    if (btnPageFirst) btnPageFirst.disabled = currentEventPage <= 1;
+    if (btnPagePrev) btnPagePrev.disabled = currentEventPage <= 1;
+    if (btnPageNext) btnPageNext.disabled = currentEventPage >= totalEventPages;
+    if (btnPageLast) btnPageLast.disabled = currentEventPage >= totalEventPages;
+
+    if (inputPageJump) {
+      inputPageJump.max = totalEventPages;
+      inputPageJump.value = currentEventPage;
+    }
+
+    // Render Page Number Buttons (smart sliding window)
+    if (paginationNumbers) {
+      paginationNumbers.innerHTML = '';
+      const maxButtons = 5;
+      let startPage = Math.max(1, currentEventPage - 2);
+      let endPage = Math.min(totalEventPages, startPage + maxButtons - 1);
+      if (endPage - startPage < maxButtons - 1) {
+        startPage = Math.max(1, endPage - maxButtons + 1);
+      }
+
+      if (startPage > 1) {
+        const b1 = document.createElement('button');
+        b1.type = 'button';
+        b1.className = 'pag-num-btn';
+        b1.textContent = '1';
+        b1.onclick = () => goToPage(1);
+        paginationNumbers.appendChild(b1);
+        if (startPage > 2) {
+          const dots = document.createElement('span');
+          dots.className = 'pag-dots';
+          dots.textContent = '...';
+          paginationNumbers.appendChild(dots);
+        }
+      }
+
+      for (let p = startPage; p <= endPage; p++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `pag-num-btn ${p === currentEventPage ? 'active' : ''}`;
+        btn.textContent = p;
+        btn.onclick = () => goToPage(p);
+        paginationNumbers.appendChild(btn);
+      }
+
+      if (endPage < totalEventPages) {
+        if (endPage < totalEventPages - 1) {
+          const dots = document.createElement('span');
+          dots.className = 'pag-dots';
+          dots.textContent = '...';
+          paginationNumbers.appendChild(dots);
+        }
+        const bLast = document.createElement('button');
+        bLast.type = 'button';
+        bLast.className = 'pag-num-btn';
+        bLast.textContent = totalEventPages;
+        bLast.onclick = () => goToPage(totalEventPages);
+        paginationNumbers.appendChild(bLast);
+      }
+    }
+  }
+
+  // LOAD TRACKED EVENTS (WITH 30 PER PAGE PAGINATION)
+  async function loadTrackedEvents(page = 1) {
+    currentEventPage = page;
     resultsLoading.style.display = 'block';
-    resultsLoadingMsg.textContent = 'Memuat video kejadian & deteksi objek dari Frigate...';
+    resultsLoadingMsg.textContent = `Memuat video kejadian halaman ${currentEventPage}...`;
     resultsEmpty.style.display = 'none';
     clipsGrid.style.display = 'none';
-    resultsCount.textContent = 'Memuat Frigate Events...';
+    if (paginationContainer) paginationContainer.style.display = 'none';
+    resultsCount.textContent = `Memuat Frigate Events (Hal ${currentEventPage})...`;
 
     const cam = cameraInput.value || 'all';
     const label = labelSelect ? labelSelect.value : 'all';
     const date = dateSelect ? dateSelect.value : '';
 
-    const queryParams = new URLSearchParams({ limit: '100' });
+    const queryParams = new URLSearchParams({
+      page: String(currentEventPage),
+      limit: String(eventPageLimit)
+    });
     if (cam && cam !== 'all') queryParams.append('cameras', cam);
     if (label && label !== 'all') queryParams.append('labels', label);
     if (date) queryParams.append('date', date);
@@ -224,9 +367,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch(`/api/events?${queryParams.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const events = await res.json();
+      const data = await res.json();
 
       resultsLoading.style.display = 'none';
+
+      const events = Array.isArray(data) ? data : (data.events || []);
+      const pagination = data.pagination || { page: currentEventPage, limit: eventPageLimit, total: events.length, totalPages: 1 };
 
       // Ensure no video with duration < 3s appears in the tab
       loadedEvents = (events || []).filter(e => (e.duration === undefined || e.duration >= 3));
@@ -234,14 +380,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!loadedEvents.length) {
         resultsEmpty.style.display = 'block';
         const dateNote = date ? ` untuk tanggal ${date}` : '';
-        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek (> 3 detik) untuk kamera "${selectedCameraText.textContent}"${dateNote}.`;
+        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek (> 3 detik) untuk kamera "${selectedCameraText.textContent}"${dateNote} (Halaman ${currentEventPage}).`;
         resultsCount.textContent = '0 kejadian ditemukan';
+        if (paginationContainer) paginationContainer.style.display = 'none';
         return;
       }
 
-      resultsCount.textContent = `${loadedEvents.length} Kejadian Terdeteksi (Durasi ≥ 3s)`;
+      const totalTxt = pagination.total ? `${pagination.total.toLocaleString('id-ID')} Total Kejadian` : `${loadedEvents.length} Kejadian`;
+      resultsCount.textContent = `${totalTxt} • Halaman ${currentEventPage} dari ${pagination.totalPages} (30 video per halaman)`;
       renderTrackedEvents(loadedEvents);
       clipsGrid.style.display = 'grid';
+
+      renderEventPagination(pagination, loadedEvents.length);
 
     } catch (err) {
       console.error('Failed to load events:', err);
@@ -249,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
       resultsEmpty.style.display = 'block';
       resultsEmptyMsg.textContent = `Gagal memuat kejadian dari Frigate: ${err.message}`;
       resultsCount.textContent = 'Error';
+      if (paginationContainer) paginationContainer.style.display = 'none';
     }
   }
 
