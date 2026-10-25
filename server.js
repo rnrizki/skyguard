@@ -76,8 +76,32 @@ async function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_recordfrigate_date ON recordfrigate(date DESC);
         CREATE INDEX IF NOT EXISTS idx_recordfrigate_start ON recordfrigate(start_time DESC);
         CREATE INDEX IF NOT EXISTS idx_recordfrigate_camera ON recordfrigate(camera);
+
+        CREATE TABLE IF NOT EXISTS frigate_events (
+          id VARCHAR(64) PRIMARY KEY,
+          camera VARCHAR(64) NOT NULL,
+          label VARCHAR(64) NOT NULL,
+          sub_label VARCHAR(100),
+          top_score REAL,
+          score REAL,
+          start_time DOUBLE PRECISION NOT NULL,
+          end_time DOUBLE PRECISION,
+          duration REAL DEFAULT 0,
+          has_clip BOOLEAN DEFAULT TRUE,
+          has_snapshot BOOLEAN DEFAULT FALSE,
+          date VARCHAR(10) NOT NULL,
+          time VARCHAR(8) NOT NULL,
+          thumbnail_base64 TEXT,
+          data JSONB,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_frigate_events_start ON frigate_events(start_time DESC);
+        CREATE INDEX IF NOT EXISTS idx_frigate_events_cam_start ON frigate_events(camera, start_time DESC);
+        CREATE INDEX IF NOT EXISTS idx_frigate_events_date ON frigate_events(date DESC);
+        CREATE INDEX IF NOT EXISTS idx_frigate_events_label ON frigate_events(label);
       `);
-      console.log('✓ ParadeDB table "recordfrigate" and indexes verified successfully.');
+      console.log('✓ ParadeDB tables "recordfrigate" and "frigate_events" verified successfully.');
     } finally {
       client.release();
     }
@@ -373,6 +397,156 @@ async function getOrFetchEventSummary() {
 
 // --- PARADEDB EVENTS ENGINE (Instant Local Query < 5ms) ---
 async function getEventsFromParadeDB({ cam, lbl, filterDateStr, limit, offset, page, res, rawArray }) {
+  // 1. Check if frigate_events has data
+  let hasEventsData = false;
+  try {
+    const chk = await pool.query('SELECT 1 FROM frigate_events LIMIT 1;');
+    if (chk.rows.length > 0) hasEventsData = true;
+  } catch (_) {}
+
+  if (hasEventsData) {
+    let sql = `
+      SELECT id, camera, label, sub_label, top_score, score, start_time, end_time, duration,
+             has_clip, has_snapshot, date, time, thumbnail_base64, data
+      FROM frigate_events
+      WHERE (duration IS NULL OR duration >= 3)
+    `;
+    const sqlParams = [];
+    let pIdx = 1;
+
+    if (cam && cam !== 'all') {
+      const camList = cam.split(',').map(c => c.trim()).filter(Boolean);
+      if (camList.length === 1) {
+        sql += ` AND camera = $${pIdx++}`;
+        sqlParams.push(camList[0]);
+      } else if (camList.length > 1) {
+        const placeholders = camList.map(() => `$${pIdx++}`).join(', ');
+        sql += ` AND camera IN (${placeholders})`;
+        sqlParams.push(...camList);
+      }
+    }
+
+    if (filterDateStr) {
+      sql += ` AND date = $${pIdx++}`;
+      sqlParams.push(filterDateStr);
+    }
+
+    if (lbl && lbl !== 'all') {
+      sql += ` AND label = $${pIdx++}`;
+      sqlParams.push(lbl);
+    }
+
+    let totalCount = null;
+    try {
+      const countSql = `SELECT COUNT(*) AS total FROM (${sql}) AS sub;`;
+      const countRes = await pool.query(countSql, sqlParams);
+      totalCount = parseInt(countRes.rows[0].total, 10);
+    } catch (cErr) {
+      console.warn('ParadeDB count query failed:', cErr.message);
+    }
+
+    sql += ` ORDER BY start_time DESC LIMIT $${pIdx++} OFFSET $${pIdx++};`;
+    sqlParams.push(limit, offset);
+
+    const result = await pool.query(sql, sqlParams);
+    const rows = result.rows || [];
+
+    const iconMap = {
+      person: '🚶',
+      car: '🚗',
+      motorcycle: '🏍️',
+      bicycle: '🚲',
+      dog: '🐕',
+      cat: '🐈'
+    };
+
+    const formatted = rows.map(r => {
+      const startTime = Number(r.start_time) || 0;
+      const endTime = r.end_time ? Number(r.end_time) : null;
+      const duration = Math.round(Number(r.duration) || (endTime ? endTime - startTime : 10));
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      const durationFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      const startDate = startTime ? new Date(startTime * 1000) : new Date();
+      const usStartStr = new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Jakarta'
+      }).format(startDate);
+
+      let endTimeStr = '';
+      let usEndStr = '';
+      if (endTime) {
+        const endDate = new Date(endTime * 1000);
+        endTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(endDate);
+        usEndStr = new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZone: 'Asia/Jakarta'
+        }).format(endDate);
+      }
+
+      const rawScore = r.top_score || r.score || (r.data && (r.data.top_score || r.data.score)) || 0.75;
+      const scoreNum = Math.round(Number(rawScore) * 100);
+
+      return {
+        id: r.id,
+        camera: r.camera,
+        label: r.label || 'person',
+        labelIcon: iconMap[r.label] || '🚶',
+        subLabel: r.sub_label,
+        startTime,
+        endTime,
+        duration,
+        durationFormatted,
+        score: scoreNum,
+        hasClip: r.has_clip !== false,
+        hasSnapshot: r.has_snapshot === true,
+        date: r.date,
+        time: r.time,
+        usStartTime: usStartStr,
+        usEndTime: usEndStr,
+        timeRange: endTimeStr ? `${r.time} - ${endTimeStr}` : `${r.time}`,
+        usTimeRange: usEndStr ? `${usStartStr} - ${usEndStr}` : `${usStartStr}`,
+        thumbnailUrl: r.thumbnail_base64 ? `data:image/webp;base64,${r.thumbnail_base64}` : `/api/events/${r.id}/thumbnail.webp`,
+        snapshotUrl: `/api/events/${r.id}/snapshot.jpg`,
+        clipUrl: `/api/events/${r.id}/clip.mp4`,
+        data: r.data || {},
+        source: 'paradedb'
+      };
+    });
+
+    if (rawArray === 'true') {
+      return res.json(formatted);
+    }
+
+    const effectiveTotal = totalCount !== null ? totalCount : (formatted.length < limit ? offset + formatted.length : offset + limit * 2);
+    const totalPages = Math.max(1, Math.ceil(effectiveTotal / limit));
+
+    return res.json({
+      events: formatted,
+      source: 'paradedb',
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages,
+        hasNext: page < totalPages && formatted.length === limit,
+        hasPrev: page > 1
+      }
+    });
+  }
+
+  // 2. Fallback to recordfrigate if events haven't synced yet
   let sql = `
     SELECT id, camera, path, date, hour, start_time, end_time, duration, objects, motion, segment_size
     FROM recordfrigate
@@ -886,11 +1060,37 @@ app.get('/api/events/:id', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
     let data = null;
+
+    // 1. Check frigate_events first
     try {
-      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`, { signal: AbortSignal.timeout(3000) });
-      if (fRes.ok) data = await fRes.json();
+      const dbEv = await pool.query('SELECT * FROM frigate_events WHERE id = $1 LIMIT 1;', [eventId]);
+      if (dbEv.rows.length > 0) {
+        const r = dbEv.rows[0];
+        data = {
+          id: r.id,
+          camera: r.camera,
+          label: r.label,
+          top_score: r.top_score,
+          score: r.score,
+          start_time: Number(r.start_time),
+          end_time: r.end_time ? Number(r.end_time) : null,
+          duration: Number(r.duration) || 10,
+          has_clip: r.has_clip !== false,
+          has_snapshot: r.has_snapshot === true,
+          data: r.data || {}
+        };
+      }
     } catch (_) {}
 
+    // 2. Check Frigate
+    if (!data) {
+      try {
+        const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`, { signal: AbortSignal.timeout(2000) });
+        if (fRes.ok) data = await fRes.json();
+      } catch (_) {}
+    }
+
+    // 3. Check recordfrigate
     if (!data) {
       const dbRes = await pool.query('SELECT * FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
       if (dbRes.rows.length > 0) {
@@ -915,10 +1115,23 @@ app.get('/api/events/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Event Thumbnail Proxy (With Clean SVG Fallback)
+// Event Thumbnail Proxy (With ParadeDB & Clean SVG Fallback)
 app.get('/api/events/:id/thumbnail.webp', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
+
+    // 1. Check ParadeDB frigate_events first (< 1ms instant!)
+    try {
+      const dbRes = await pool.query('SELECT thumbnail_base64 FROM frigate_events WHERE id = $1 LIMIT 1;', [eventId]);
+      if (dbRes.rows.length > 0 && dbRes.rows[0].thumbnail_base64) {
+        res.setHeader('Content-Type', 'image/webp');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        const buffer = Buffer.from(dbRes.rows[0].thumbnail_base64, 'base64');
+        return res.send(buffer);
+      }
+    } catch (_) {}
+
+    // 2. Fallback to Frigate
     try {
       const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/thumbnail.webp`, { signal: AbortSignal.timeout(2000) });
       if (fRes.ok) {
@@ -1247,6 +1460,123 @@ app.post('/api/recordings/batch-sync', async (req, res) => {
     res.json({ success: true, count: ids.length });
   } catch (err) {
     console.error('Batch sync error:', err);
+    res.status(500).json({ error: 'Database insertion error', details: err.message });
+  }
+});
+
+// --- API: EVENTS BATCH SYNC TO PARADEDB (Called from OpenWrt) ---
+app.post('/api/events/batch-sync', async (req, res) => {
+  const syncKey = req.headers['x-sync-key'] || req.query.key;
+  if (syncKey !== SYNC_KEY) {
+    return res.status(401).json({ error: 'Invalid or missing X-Sync-Key' });
+  }
+
+  const events = Array.isArray(req.body) ? req.body : (req.body.events || []);
+  if (!events.length) {
+    return res.json({ success: true, count: 0, message: 'Empty events batch' });
+  }
+
+  try {
+    const ids = [];
+    const cameras = [];
+    const labels = [];
+    const subLabels = [];
+    const topScores = [];
+    const scores = [];
+    const startTimes = [];
+    const endTimes = [];
+    const durations = [];
+    const hasClips = [];
+    const hasSnapshots = [];
+    const dates = [];
+    const times = [];
+    const thumbs = [];
+    const dataList = [];
+
+    for (const e of events) {
+      if (!e.id || !e.camera || !e.label) continue;
+
+      const startTime = Number(e.start_time) || 0;
+      const endTime = e.end_time ? Number(e.end_time) : null;
+      const dur = (endTime && startTime) ? Math.max(0, endTime - startTime) : (Number(e.duration) || 0);
+
+      const startDate = startTime ? new Date(startTime * 1000) : new Date();
+      const dateStr = e.date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(startDate);
+      const timeStr = e.time || new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(startDate);
+
+      ids.push(String(e.id));
+      cameras.push(String(e.camera));
+      labels.push(String(e.label));
+      subLabels.push(e.sub_label ? String(e.sub_label) : null);
+      topScores.push(e.top_score !== undefined && e.top_score !== null ? Number(e.top_score) : null);
+      scores.push(e.score !== undefined && e.score !== null ? Number(e.score) : null);
+      startTimes.push(startTime);
+      endTimes.push(endTime);
+      durations.push(dur);
+      hasClips.push(e.has_clip !== false);
+      hasSnapshots.push(e.has_snapshot === true);
+      dates.push(dateStr);
+      times.push(timeStr);
+      thumbs.push(e.thumbnail_base64 || null);
+      dataList.push(e.data ? (typeof e.data === 'string' ? e.data : JSON.stringify(e.data)) : null);
+    }
+
+    if (!ids.length) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const query = `
+      INSERT INTO frigate_events (
+        id, camera, label, sub_label, top_score, score, start_time, end_time, duration,
+        has_clip, has_snapshot, date, time, thumbnail_base64, data
+      )
+      SELECT * FROM UNNEST(
+        $1::text[],
+        $2::text[],
+        $3::text[],
+        $4::text[],
+        $5::real[],
+        $6::real[],
+        $7::float8[],
+        $8::float8[],
+        $9::real[],
+        $10::bool[],
+        $11::bool[],
+        $12::text[],
+        $13::text[],
+        $14::text[],
+        $15::jsonb[]
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        end_time = EXCLUDED.end_time,
+        duration = EXCLUDED.duration,
+        top_score = COALESCE(EXCLUDED.top_score, frigate_events.top_score),
+        score = COALESCE(EXCLUDED.score, frigate_events.score),
+        thumbnail_base64 = COALESCE(EXCLUDED.thumbnail_base64, frigate_events.thumbnail_base64),
+        data = COALESCE(EXCLUDED.data, frigate_events.data);
+    `;
+
+    await pool.query(query, [
+      ids,
+      cameras,
+      labels,
+      subLabels,
+      topScores,
+      scores,
+      startTimes,
+      endTimes,
+      durations,
+      hasClips,
+      hasSnapshots,
+      dates,
+      times,
+      thumbs,
+      dataList
+    ]);
+
+    res.json({ success: true, count: ids.length });
+  } catch (err) {
+    console.error('Events batch sync error:', err);
     res.status(500).json({ error: 'Database insertion error', details: err.message });
   }
 });

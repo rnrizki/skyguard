@@ -433,6 +433,9 @@ document.addEventListener('DOMContentLoaded', () => {
               <button class="btn btn-primary btn-xs" onclick="openTrackedObjectModal('${event.id}')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video
               </button>
+              <button class="btn btn-secondary btn-xs btn-ai-sparkle" onclick="openTrackedObjectModal('${event.id}', 'ai')" title="Analisis Kejadian dengan Gemini AI" style="background:linear-gradient(135deg, #4f46e5, #7c3aed);color:#fff;border:none;display:inline-flex;align-items:center;gap:3px;font-weight:600;">
+                ✨ AI
+              </button>
               <a href="${event.clipUrl}" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh (MP4)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </a>
