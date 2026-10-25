@@ -358,7 +358,7 @@ async function getOrFetchEventSummary() {
   }
   isFetchingSummary = true;
   try {
-    const res = await globalThis.fetch(`${FRIGATE_URL}/api/events/summary?timezone=Asia/Jakarta`);
+    const res = await globalThis.fetch(`${FRIGATE_URL}/api/events/summary?timezone=Asia/Jakarta`, { signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       cachedEventSummary = await res.json();
       lastSummaryFetch = now;
@@ -523,8 +523,10 @@ app.get('/api/events', requireAuth, async (req, res) => {
       if (after) params.append('after', after);
     }
 
-    // If source explicitly requests paradedb, or if query has date parameter, prioritize ParadeDB!
-    if (req.query.source === 'paradedb' || (date && date !== 'all' && date !== '')) {
+    // DEFAULT TO PARADEDB: PostgreSQL runs locally on VPS, has 0ms network latency,
+    // and eliminates 502 Bad Gateway timeouts from Frigate/Tailscale.
+    // Only query Frigate if ?source=frigate is explicitly requested!
+    if (req.query.source !== 'frigate') {
       return await getEventsFromParadeDB({ cam, lbl, filterDateStr, limit, offset, page, res, rawArray });
     }
 
@@ -995,12 +997,21 @@ app.get('/api/events/:id/s3-recording', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
 
-    // 1. Get event metadata
+    // 1. Get event metadata - check local ParadeDB first (< 1ms)!
     let event = null;
     try {
-      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
-      if (fRes.ok) event = await fRes.json();
+      const dbRes = await pool.query('SELECT camera, path, start_time, end_time, duration FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
+      if (dbRes.rows.length > 0) {
+        event = dbRes.rows[0];
+      }
     } catch (_) {}
+
+    if (!event) {
+      try {
+        const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`, { signal: AbortSignal.timeout(2000) });
+        if (fRes.ok) event = await fRes.json();
+      } catch (_) {}
+    }
 
     if (!event || !event.camera || !event.start_time) {
       return res.status(404).json({ error: 'Event metadata not found' });
@@ -1072,38 +1083,47 @@ app.get('/api/events/:id/clip.mp4', requireAuth, async (req, res) => {
     const eventId = req.params.id;
     const range = req.headers.range;
 
-    // 1. Get event metadata (lightweight metadata call, no ffmpeg)
-    let event = null;
+    // 1. Check local ParadeDB first for instant exact path (< 1ms)!
+    let key = null;
     try {
-      const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`);
-      if (fRes.ok) event = await fRes.json();
+      const dbRes = await pool.query('SELECT path FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
+      if (dbRes.rows.length > 0) {
+        key = dbRes.rows[0].path.replace(/^\/media\/frigate\//, '');
+      }
     } catch (_) {}
 
-    if (!event || !event.camera || !event.start_time) {
-      return res.status(404).send('Event not found');
+    // 2. If not found by direct ID, search by camera and time window
+    if (!key) {
+      let event = null;
+      try {
+        const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`, { signal: AbortSignal.timeout(2000) });
+        if (fRes.ok) event = await fRes.json();
+      } catch (_) {}
+
+      if (event && event.camera && event.start_time) {
+        const camera = event.camera;
+        const startTime = Number(event.start_time) - 1.0;
+        const endTime = Number(event.end_time || (event.start_time + (event.duration || 10))) + 1.0;
+
+        const querySql = `
+          SELECT path, start_time, end_time, duration
+          FROM recordfrigate
+          WHERE camera = $1
+            AND start_time <= $3
+            AND (end_time >= $2 OR (start_time + duration) >= $2)
+          ORDER BY start_time ASC
+          LIMIT 1;
+        `;
+        const result = await pool.query(querySql, [camera, startTime, endTime]);
+        if (result.rows && result.rows.length > 0) {
+          key = result.rows[0].path.replace(/^\/media\/frigate\//, '');
+        }
+      }
     }
 
-    const camera = event.camera;
-    const startTime = Number(event.start_time) - 1.0;
-    const endTime = Number(event.end_time || (event.start_time + (event.duration || 10))) + 1.0;
-
-    // 2. Query ParadeDB for S3 recording segment
-    const querySql = `
-      SELECT path, start_time, end_time, duration
-      FROM recordfrigate
-      WHERE camera = $1
-        AND start_time <= $3
-        AND (end_time >= $2 OR (start_time + duration) >= $2)
-      ORDER BY start_time ASC
-      LIMIT 1;
-    `;
-    const result = await pool.query(querySql, [camera, startTime, endTime]);
-
-    if (!result.rows || result.rows.length === 0) {
+    if (!key) {
       return res.status(404).send('Rekaman kejadian belum tersedia di AWS S3 RustFS');
     }
-
-    const key = result.rows[0].path.replace(/^\/media\/frigate\//, '');
 
     // 3. Stream directly from AWS S3 RustFS with Range support (Zero OpenWrt CPU!)
     const command = new GetObjectCommand({

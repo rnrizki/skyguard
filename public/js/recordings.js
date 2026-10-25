@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsEmpty.style.display = 'none';
     clipsGrid.style.display = 'none';
     if (paginationContainer) paginationContainer.style.display = 'none';
-    resultsCount.textContent = `Memuat Frigate Events (Hal ${currentEventPage})...`;
+    resultsCount.textContent = `Memuat Kejadian (Hal ${currentEventPage})...`;
 
     const cam = cameraInput.value || 'all';
     const label = labelSelect ? labelSelect.value : 'all';
@@ -338,7 +338,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const queryParams = new URLSearchParams({
       page: String(currentEventPage),
-      limit: String(eventPageLimit)
+      limit: String(eventPageLimit),
+      source: 'paradedb'
     });
     if (cam && cam !== 'all') queryParams.append('cameras', cam);
     if (label && label !== 'all') queryParams.append('labels', label);
@@ -659,7 +660,7 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
   if (sessionNav) sessionNav.style.display = 'none';
 
   // Video source & controls (initial placeholder while S3 segments load)
-  const initialS3Url = `/api/events/${event.id}/clip.mp4`;
+  const initialS3Url = (event.clipUrl) ? event.clipUrl : `/api/events/${event.id}/clip.mp4`;
   downloadBtn.href = initialS3Url;
   player.src = initialS3Url;
   player.playbackRate = 1.0;
