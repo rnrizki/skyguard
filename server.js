@@ -2,6 +2,8 @@ const express = require('express');
 const { engine } = require('express-handlebars');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const fs = require('fs');
+const { execFile } = require('child_process');
 const { S3Client, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { Pool } = require('pg');
 
@@ -1210,14 +1212,23 @@ app.get('/api/events/:id/s3-recording', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
 
-    // 1. Get event metadata - check local ParadeDB first (< 1ms)!
+    // 1. Get event metadata - check local ParadeDB frigate_events first (< 1ms)!
     let event = null;
     try {
-      const dbRes = await pool.query('SELECT camera, path, start_time, end_time, duration FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
-      if (dbRes.rows.length > 0) {
-        event = dbRes.rows[0];
+      const dbEv = await pool.query('SELECT camera, start_time, end_time, duration FROM frigate_events WHERE id = $1 LIMIT 1;', [eventId]);
+      if (dbEv.rows.length > 0) {
+        event = dbEv.rows[0];
       }
     } catch (_) {}
+
+    if (!event) {
+      try {
+        const dbRes = await pool.query('SELECT camera, path, start_time, end_time, duration FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
+        if (dbRes.rows.length > 0) {
+          event = dbRes.rows[0];
+        }
+      } catch (_) {}
+    }
 
     if (!event) {
       try {
@@ -1290,86 +1301,242 @@ app.get('/api/events/:id/s3-recording', requireAuth, async (req, res) => {
   }
 });
 
-// Event Clip Stream - ALWAYS DIRECTLY FROM AWS S3 RUSTFS (Zero OpenWrt CPU usage!)
+// Event Clip Stream & Download - Lossless multi-segment concatenation for full event duration
 app.get('/api/events/:id/clip.mp4', requireAuth, async (req, res) => {
   try {
     const eventId = req.params.id;
+    const isDownload = req.query.download === '1' || req.query.dl === '1';
     const range = req.headers.range;
 
-    // 1. Check local ParadeDB first for instant exact path (< 1ms)!
-    let key = null;
+    // 1. Get event metadata (ParadeDB frigate_events -> Frigate API -> recordfrigate)
+    let event = null;
     try {
-      const dbRes = await pool.query('SELECT path FROM recordfrigate WHERE id = $1 LIMIT 1;', [eventId]);
-      if (dbRes.rows.length > 0) {
-        key = dbRes.rows[0].path.replace(/^\/media\/frigate\//, '');
-      }
+      const evRes = await pool.query(
+        'SELECT id, camera, start_time, end_time, duration, label FROM frigate_events WHERE id = $1 LIMIT 1;',
+        [eventId]
+      );
+      if (evRes.rows.length > 0) event = evRes.rows[0];
     } catch (_) {}
 
-    // 2. If not found by direct ID, search by camera and time window
-    if (!key) {
-      let event = null;
+    if (!event) {
       try {
         const fRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}`, { signal: AbortSignal.timeout(2000) });
         if (fRes.ok) event = await fRes.json();
       } catch (_) {}
+    }
 
-      if (event && event.camera && event.start_time) {
-        const camera = event.camera;
-        const startTime = Number(event.start_time) - 1.0;
-        const endTime = Number(event.end_time || (event.start_time + (event.duration || 10))) + 1.0;
+    if (!event) {
+      try {
+        const rfRes = await pool.query(
+          'SELECT id, camera, path, start_time, end_time, duration FROM recordfrigate WHERE id = $1 LIMIT 1;',
+          [eventId]
+        );
+        if (rfRes.rows.length > 0) event = rfRes.rows[0];
+      } catch (_) {}
+    }
 
-        const querySql = `
-          SELECT path, start_time, end_time, duration
-          FROM recordfrigate
-          WHERE camera = $1
-            AND start_time <= $3
-            AND (end_time >= $2 OR (start_time + duration) >= $2)
-          ORDER BY start_time ASC
-          LIMIT 1;
-        `;
-        const result = await pool.query(querySql, [camera, startTime, endTime]);
-        if (result.rows && result.rows.length > 0) {
-          key = result.rows[0].path.replace(/^\/media\/frigate\//, '');
+    if (!event || !event.camera || !event.start_time) {
+      return res.status(404).send('Data rekaman kejadian tidak ditemukan');
+    }
+
+    const camera = event.camera;
+    const startTime = Number(event.start_time);
+    const endTime = Number(event.end_time || (startTime + (Number(event.duration) || 10)));
+    const duration = Math.max(1, Math.round(endTime - startTime));
+    const label = event.label || 'event';
+    const downloadFilename = `${camera}_${label}_${Math.floor(startTime)}_${duration}s.mp4`;
+
+    // 2. Check local disk cache on VPS (/tmp/skyguard-clips/<eventId>.mp4)
+    const cacheDir = path.join('/tmp', 'skyguard-clips');
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    const cachedFile = path.join(cacheDir, `${eventId}.mp4`);
+
+    if (fs.existsSync(cachedFile)) {
+      const stat = fs.statSync(cachedFile);
+      if (stat.size > 1024) {
+        if (isDownload) {
+          return res.download(cachedFile, downloadFilename);
+        } else {
+          res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+          return res.sendFile(cachedFile);
         }
       }
     }
 
-    if (!key) {
+    // 3. Try native Frigate clip endpoint first (instant for recent events < 1h)
+    try {
+      const fClipRes = await globalThis.fetch(`${FRIGATE_URL}/api/events/${eventId}/clip.mp4`, {
+        signal: AbortSignal.timeout(6000)
+      });
+      if (fClipRes.ok && fClipRes.headers.get('content-type')?.includes('video/mp4')) {
+        const arrayBuf = await fClipRes.arrayBuffer();
+        if (arrayBuf && arrayBuf.byteLength > 1024) {
+          const buf = Buffer.from(arrayBuf);
+          try { fs.writeFileSync(cachedFile, buf); } catch (_) {}
+          if (isDownload) {
+            res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Length', buf.length);
+            return res.end(buf);
+          } else {
+            return res.sendFile(cachedFile);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. Query ParadeDB for all matching recording segments in S3 RustFS
+    const querySql = `
+      SELECT id, camera, path, start_time, end_time, duration, segment_size
+      FROM recordfrigate
+      WHERE camera = $1
+        AND start_time <= $3
+        AND (end_time >= $2 OR (start_time + duration) >= $2)
+      ORDER BY start_time ASC;
+    `;
+    const result = await pool.query(querySql, [camera, startTime - 1.0, endTime + 1.0]);
+    const segments = result.rows || [];
+
+    if (segments.length === 0) {
       return res.status(404).send('Rekaman kejadian belum tersedia di AWS S3 RustFS');
     }
 
-    // 3. Stream directly from AWS S3 RustFS with Range support (Zero OpenWrt CPU!)
-    const command = new GetObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: key,
-      Range: range || undefined
-    });
+    // 5. If only 1 segment, stream directly
+    if (segments.length === 1) {
+      const key = segments[0].path.replace(/^\/media\/frigate\//, '');
+      try {
+        const command = new GetObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: key,
+          Range: range || undefined
+        });
+        const s3Response = await s3.send(command);
 
-    const s3Response = await s3.send(command);
+        res.setHeader('X-Storage-Source', 's3_rustfs');
+        if (isDownload) {
+          res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+        } else {
+          res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+        }
 
-    res.setHeader('X-Storage-Source', 's3_rustfs');
-    res.setHeader('X-S3-Synced', 'true');
-
-    if (range && s3Response.ContentRange) {
-      res.writeHead(206, {
-        'Content-Range': s3Response.ContentRange,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': s3Response.ContentLength,
-        'Content-Type': s3Response.ContentType || 'video/mp4'
-      });
-    } else {
-      res.writeHead(200, {
-        'Content-Length': s3Response.ContentLength,
-        'Content-Type': s3Response.ContentType || 'video/mp4',
-        'Accept-Ranges': 'bytes'
-      });
+        if (range && s3Response.ContentRange) {
+          res.writeHead(206, {
+            'Content-Range': s3Response.ContentRange,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': s3Response.ContentLength,
+            'Content-Type': 'video/mp4'
+          });
+        } else {
+          res.writeHead(200, {
+            'Content-Length': s3Response.ContentLength,
+            'Content-Type': 'video/mp4',
+            'Accept-Ranges': 'bytes'
+          });
+        }
+        return s3Response.Body.pipe(res);
+      } catch (s3Err) {
+        // Fallback to direct Frigate Nginx stream if not yet in S3
+        try {
+          const fStream = await globalThis.fetch(`${FRIGATE_URL}/${key}`);
+          if (fStream.ok) {
+            const buf = Buffer.from(await fStream.arrayBuffer());
+            if (isDownload) res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Length', buf.length);
+            return res.end(buf);
+          }
+        } catch (_) {}
+        return res.status(404).send(`Segmen video belum tersedia: ${s3Err.message}`);
+      }
     }
 
-    return s3Response.Body.pipe(res);
+    // 6. Multiple segments: Download and concatenate losslessly with ffmpeg
+    const tempBuildDir = path.join('/tmp', 'skyguard-build', `${eventId}_${Date.now()}`);
+    fs.mkdirSync(tempBuildDir, { recursive: true });
+
+    try {
+      const downloadedList = [];
+      for (let i = 0; i < segments.length; i++) {
+        const key = segments[i].path.replace(/^\/media\/frigate\//, '');
+        const segFilePath = path.join(tempBuildDir, `seg_${i}.mp4`);
+
+        let segBuffer = null;
+        try {
+          const s3Obj = await s3.send(new GetObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key
+          }));
+          const bytes = await s3Obj.Body.transformToByteArray();
+          segBuffer = Buffer.from(bytes);
+        } catch (_) {
+          try {
+            const fRes = await globalThis.fetch(`${FRIGATE_URL}/${key}`, { signal: AbortSignal.timeout(3000) });
+            if (fRes.ok) segBuffer = Buffer.from(await fRes.arrayBuffer());
+          } catch (_) {}
+        }
+
+        if (segBuffer && segBuffer.length > 1000) {
+          fs.writeFileSync(segFilePath, segBuffer);
+          downloadedList.push(`file '${segFilePath}'`);
+        }
+      }
+
+      if (downloadedList.length === 0) {
+        return res.status(404).send('Tidak dapat mengunduh segmen rekaman kejadian');
+      }
+
+      if (downloadedList.length === 1) {
+        fs.copyFileSync(path.join(tempBuildDir, 'seg_0.mp4'), cachedFile);
+      } else {
+        const concatTxtPath = path.join(tempBuildDir, 'concat.txt');
+        fs.writeFileSync(concatTxtPath, downloadedList.join('\n'));
+
+        await new Promise((resolve, reject) => {
+          execFile('ffmpeg', [
+            '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concatTxtPath,
+            '-c', 'copy',
+            '-movflags', '+faststart',
+            cachedFile
+          ], (err, stdout, stderr) => {
+            if (err) {
+              console.warn('FFmpeg concat warning:', stderr || err.message);
+              return reject(err);
+            }
+            resolve();
+          });
+        });
+      }
+
+      if (fs.existsSync(cachedFile)) {
+        if (isDownload) {
+          return res.download(cachedFile, downloadFilename);
+        } else {
+          res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+          return res.sendFile(cachedFile);
+        }
+      } else {
+        throw new Error('Concat file not created');
+      }
+    } catch (concatErr) {
+      console.warn(`Concat error for event ${eventId}, fallback to segment 0:`, concatErr.message);
+      const firstKey = segments[0].path.replace(/^\/media\/frigate\//, '');
+      const cmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: firstKey });
+      const s3Stream = await s3.send(cmd);
+      if (isDownload) res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+      res.setHeader('Content-Type', 'video/mp4');
+      return s3Stream.Body.pipe(res);
+    } finally {
+      try { fs.rmSync(tempBuildDir, { recursive: true, force: true }); } catch (_) {}
+    }
 
   } catch (err) {
-    console.error(`Error streaming S3 clip for event ${req.params.id}:`, err.message);
-    res.status(500).send(`S3 streaming error: ${err.message}`);
+    console.error(`Error delivering full clip for event ${req.params.id}:`, err.message);
+    res.status(500).send(`Clip error: ${err.message}`);
   }
 });
 
@@ -1896,6 +2063,24 @@ app.get('/api/recordings/stream', requireAuth, async (req, res) => {
 
     return s3Response.Body.pipe(res);
   } catch (s3Err) {
+    // If not found in S3, fallback to Frigate Nginx direct stream (for recordings < 1h old)
+    try {
+      const directUrl = `${FRIGATE_URL}/${key}`;
+      const fRes = await globalThis.fetch(directUrl, {
+        headers: range ? { Range: range } : {}
+      });
+      if (fRes.ok || fRes.status === 206) {
+        res.setHeader('X-Storage-Source', 'frigate_live');
+        if (fRes.headers.get('content-range')) res.setHeader('Content-Range', fRes.headers.get('content-range'));
+        if (fRes.headers.get('content-length')) res.setHeader('Content-Length', fRes.headers.get('content-length'));
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.status(fRes.status);
+        const arrayBuf = await fRes.arrayBuffer();
+        return res.end(Buffer.from(arrayBuf));
+      }
+    } catch (_) {}
+
     console.warn(`S3 stream error for ${key}:`, s3Err.message);
     res.status(404).send(`Video segment not found in AWS S3 RustFS: ${s3Err.message}`);
   }

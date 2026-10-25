@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <button class="btn btn-primary btn-xs" onclick="openTrackedObjectModal('${event.id}')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video
               </button>
-              <a href="${event.clipUrl}" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh (MP4)">
+              <a href="/api/events/${event.id}/clip.mp4?download=1" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh ${durText} (MP4)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </a>
             </div>
@@ -659,9 +659,21 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
   activeTrackedSegmentIdx = 0;
   if (sessionNav) sessionNav.style.display = 'none';
 
+  // Download button always targets the full event video utuh
+  const fullClipDownloadUrl = `/api/events/${event.id}/clip.mp4?download=1`;
+  const durText = event.durationFormatted || (event.duration ? `${Math.round(event.duration)}s` : '');
+  const dlTextEl = document.getElementById('tracked-download-text');
+  if (dlTextEl) {
+    dlTextEl.textContent = durText ? `Download Video Utuh (${durText})` : 'Download Video Utuh';
+  }
+  downloadBtn.href = fullClipDownloadUrl;
+  downloadBtn.setAttribute('download', `${event.camera || 'event'}_${event.label || 'object'}_${event.id}.mp4`);
+
+  const dlSegBtn = document.getElementById('tracked-download-seg-btn');
+  if (dlSegBtn) dlSegBtn.style.display = 'none';
+
   // Video source & controls (initial placeholder while S3 segments load)
   const initialS3Url = (event.clipUrl) ? event.clipUrl : `/api/events/${event.id}/clip.mp4`;
-  downloadBtn.href = initialS3Url;
   player.src = initialS3Url;
   player.playbackRate = 1.0;
   window.resetTrackedSpeedButtons();
@@ -771,7 +783,6 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
       // Fallback: S3 stream endpoint for event
       const s3ClipUrl = `/api/events/${eventId}/clip.mp4`;
       player.src = s3ClipUrl;
-      downloadBtn.href = s3ClipUrl;
       player.playbackRate = 1.0;
       window.resetTrackedSpeedButtons();
       player.play().catch(e => console.warn('Autoplay prevented:', e));
@@ -780,7 +791,6 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
     console.warn('Could not query ParadeDB for S3 segments:', err);
     const s3ClipUrl = `/api/events/${eventId}/clip.mp4`;
     player.src = s3ClipUrl;
-    downloadBtn.href = s3ClipUrl;
   } finally {
     if (loadingEl) loadingEl.style.display = 'none';
   }
@@ -805,8 +815,20 @@ function playTrackedSegment(idx) {
 
   // Set Video Source directly from AWS S3 RustFS!
   player.src = seg.streamUrl;
-  downloadBtn.href = seg.streamUrl;
-  downloadBtn.setAttribute('download', `${seg.camera}_${seg.key.split('/').pop()}`);
+
+  // Secondary segment download button (if event spans across multiple segments)
+  const dlSegBtn = document.getElementById('tracked-download-seg-btn');
+  if (dlSegBtn) {
+    if (activeTrackedSegments.length > 1) {
+      dlSegBtn.href = seg.streamUrl;
+      dlSegBtn.setAttribute('download', `${seg.camera}_seg${idx + 1}_${seg.key.split('/').pop()}`);
+      dlSegBtn.textContent = `Segmen ${idx + 1} (${seg.duration}s)`;
+      dlSegBtn.style.display = 'inline-flex';
+    } else {
+      dlSegBtn.style.display = 'none';
+    }
+  }
+
   player.playbackRate = 1.0;
   window.resetTrackedSpeedButtons();
 

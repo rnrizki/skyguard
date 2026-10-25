@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Install ffmpeg for lossless video concatenation
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 # Copy dependency definitions
