@@ -513,7 +513,8 @@ app.get('/api/events', requireAuth, async (req, res) => {
           filtered = filtered.filter(item => item.day === filterDateStr);
         }
         if (cam && cam !== 'all') {
-          filtered = filtered.filter(item => item.camera === cam);
+          const camList = cam.split(',').map(c => c.trim());
+          filtered = filtered.filter(item => camList.includes(item.camera));
         }
         if (lbl && lbl !== 'all') {
           filtered = filtered.filter(item => item.label === lbl);
@@ -1114,8 +1115,15 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
     let pIdx = 2;
 
     if (camera && camera !== 'all') {
-      sql += ` AND camera = $${pIdx++}`;
-      params.push(camera);
+      const camList = camera.split(',').map(c => c.trim()).filter(Boolean);
+      if (camList.length === 1) {
+        sql += ` AND camera = $${pIdx++}`;
+        params.push(camList[0]);
+      } else if (camList.length > 1) {
+        const placeholders = camList.map(() => `$${pIdx++}`).join(', ');
+        sql += ` AND camera IN (${placeholders})`;
+        params.push(...camList);
+      }
     }
 
     if (hour !== undefined && hour !== '') {
@@ -1171,8 +1179,9 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
     if (hour !== undefined && hour !== '') {
       const paddedHour = String(hour).padStart(2, '0');
       prefix += `${paddedHour}/`;
-      if (camera && camera !== 'all') {
-        prefix += `${camera}/`;
+      const camList = camera && camera !== 'all' ? camera.split(',').map(c => c.trim()).filter(Boolean) : [];
+      if (camList.length === 1) {
+        prefix += `${camList[0]}/`;
       }
     }
 
@@ -1183,10 +1192,11 @@ app.get('/api/recordings/list', requireAuth, async (req, res) => {
     });
 
     const data = await s3.send(command);
+    const camList = camera && camera !== 'all' ? camera.split(',').map(c => c.trim()).filter(Boolean) : [];
     const files = (data.Contents || []).filter(item => {
       if (!item.Key.endsWith('.mp4')) return false;
-      if (camera && camera !== 'all') {
-        return item.Key.includes(`/${camera}/`);
+      if (camList.length > 0) {
+        return camList.some(c => item.Key.includes(`/${c}/`));
       }
       return true;
     }).map(item => {

@@ -6,15 +6,9 @@
         <span class="indicator-dot"></span>
         Live Monitoring Hub
       </h2>
-      <span class="badge badge-info">9 Active Streams (16:9 Widescreen)</span>
     </div>
 
     <div class="toolbar-right">
-      <div class="grid-selector">
-        <button class="grid-btn active" data-grid="grid-3x3" title="3x3 Grid (9 Cameras)">3&times;3</button>
-        <button class="grid-btn" data-grid="grid-2x2" title="2x2 Focus Grid">2&times;2</button>
-        <button class="grid-btn" data-grid="grid-1x1" title="Single View">1&times;1</button>
-      </div>
       <button id="btn-reconnect-all" class="btn btn-secondary btn-sm" title="Refresh all streams">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"></polyline>
@@ -26,10 +20,26 @@
     </div>
   </div>
 
+  <!-- Multi-Select Camera Radio/Pill Bar -->
+  <div class="camera-pills-bar">
+    <div class="camera-pill-selector" id="live-camera-selector">
+      <button type="button" class="cam-radio-pill active" data-cam="all">
+        <span class="pill-dot"></span>
+        <span>Semua Kamera</span>
+      </button>
+      {{#each cameras}}
+      <button type="button" class="cam-radio-pill" data-cam="{{this.id}}">
+        <span class="pill-dot"></span>
+        <span>{{this.name}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
+
   <!-- Camera Video Grid (Enforced 16:9 Ratio) -->
   <div id="camera-grid" class="camera-grid grid-3x3">
     {{#each cameras}}
-    <div class="camera-card" id="card-{{this.id}}" data-stream="{{this.stream}}">
+    <div class="camera-card" id="card-{{this.id}}" data-stream="{{this.stream}}" data-cam-id="{{this.id}}">
       <!-- Camera Card Header Badge -->
       <div class="camera-header">
         <div class="camera-title-badge">
@@ -46,8 +56,8 @@
         </div>
       </div>
 
-      <!-- 16:9 Aspect Ratio Video Viewport -->
-      <div class="video-viewport" ondblclick="toggleCamFullscreen('card-{{this.id}}')">
+      <!-- 16:9 Aspect Ratio Video Viewport (Tap / Click to Fullscreen) -->
+      <div class="video-viewport" onclick="toggleCamFullscreen('card-{{this.id}}')">
         <!-- Live Loading Spinner -->
         <div class="video-loader" id="loader-{{this.id}}">
           <div class="spinner"></div>
@@ -62,15 +72,6 @@
           playsinline 
           class="surveillance-video"
         ></video>
-
-        <!-- Hover Play / Fullscreen Overlay (Frigate / S3 Style) -->
-        <div class="live-play-overlay" title="Double click atau Tap untuk Fullscreen" onclick="handleLiveCardTap(event, 'card-{{this.id}}')">
-          <div class="live-play-circle">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-          </div>
-        </div>
       </div>
 
       <!-- Footer Overlay -->

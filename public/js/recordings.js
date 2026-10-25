@@ -65,69 +65,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Camera Popover Interaction
-  if (cameraBtn && cameraPopover) {
-    cameraBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isVisible = cameraPopover.style.display === 'block';
-      cameraPopover.style.display = isVisible ? 'none' : 'block';
-      cameraBtn.classList.toggle('open', !isVisible);
-    });
+  // Multi-Select Camera Radio/Pill Selector
+  const recCamSelector = document.getElementById('recordings-camera-selector');
+  const recCamPills = document.querySelectorAll('#recordings-camera-selector .cam-radio-pill');
+  const recPillAll = document.querySelector('#recordings-camera-selector [data-cam="all"]');
 
-    document.addEventListener('click', (e) => {
-      if (!cameraPopover.contains(e.target) && !cameraBtn.contains(e.target)) {
-        cameraPopover.style.display = 'none';
-        cameraBtn.classList.remove('open');
-      }
-    });
+  if (recCamSelector && recCamPills.length > 0) {
+    recCamPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        const targetCam = pill.dataset.cam;
 
-    radioItems.forEach(item => {
-      item.addEventListener('click', () => {
-        const camId = item.getAttribute('data-cam');
-        const camName = item.getAttribute('data-name');
-        pendingCamera = camId;
-        pendingCameraName = camName;
+        if (targetCam === 'all') {
+          // Turn ON 'all', turn OFF all others
+          recCamPills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          if (cameraInput) cameraInput.value = 'all';
+        } else {
+          // Specific camera clicked: Turn OFF 'all'
+          if (recPillAll) recPillAll.classList.remove('active');
 
-        radioItems.forEach(i => {
-          const isSelected = i.getAttribute('data-cam') === camId;
-          i.classList.toggle('active', isSelected);
-          const pill = i.querySelector('.toggle-pill');
-          if (pill) pill.classList.toggle('active', isSelected);
-        });
-      });
-    });
+          // Toggle this camera
+          pill.classList.toggle('active');
 
-    if (btnApply) {
-      btnApply.addEventListener('click', () => {
-        activeCamera = pendingCamera;
-        cameraInput.value = activeCamera;
-        selectedCameraText.textContent = pendingCameraName;
-        cameraPopover.style.display = 'none';
-        cameraBtn.classList.remove('open');
+          // Collect active camera IDs
+          const activeCamIds = [];
+          recCamPills.forEach(p => {
+            if (p !== recPillAll && p.classList.contains('active')) {
+              activeCamIds.push(p.dataset.cam);
+            }
+          });
+
+          if (activeCamIds.length === 0) {
+            // None active, revert to all
+            if (recPillAll) recPillAll.classList.add('active');
+            if (cameraInput) cameraInput.value = 'all';
+          } else {
+            if (cameraInput) cameraInput.value = activeCamIds.join(',');
+          }
+        }
+
+        currentEventPage = 1;
         triggerSearch();
       });
-    }
-
-    if (btnReset) {
-      btnReset.addEventListener('click', () => {
-        activeCamera = 'all';
-        pendingCamera = 'all';
-        pendingCameraName = 'All Cameras';
-        cameraInput.value = 'all';
-        selectedCameraText.textContent = 'All Cameras';
-
-        radioItems.forEach(i => {
-          const isAll = i.getAttribute('data-cam') === 'all';
-          i.classList.toggle('active', isAll);
-          const pill = i.querySelector('.toggle-pill');
-          if (pill) pill.classList.toggle('active', isAll);
-        });
-
-        cameraPopover.style.display = 'none';
-        cameraBtn.classList.remove('open');
-        triggerSearch();
-      });
-    }
+    });
   }
 
   // When date is changed in select, trigger search immediately
@@ -380,7 +360,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!loadedEvents.length) {
         resultsEmpty.style.display = 'block';
         const dateNote = date ? ` untuk tanggal ${date}` : '';
-        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek (> 3 detik) untuk kamera "${selectedCameraText.textContent}"${dateNote} (Halaman ${currentEventPage}).`;
+        const camLabel = (cameraInput && cameraInput.value !== 'all') ? cameraInput.value : 'Semua Kamera';
+        resultsEmptyMsg.textContent = `Tidak ada rekaman kejadian objek (> 3 detik) untuk kamera "${camLabel}"${dateNote} (Halaman ${currentEventPage}).`;
         resultsCount.textContent = '0 kejadian ditemukan';
         if (paginationContainer) paginationContainer.style.display = 'none';
         return;
@@ -453,9 +434,6 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="clip-btn-group">
               <button class="btn btn-primary btn-xs" onclick="openTrackedObjectModal('${event.id}')">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Putar Video
-              </button>
-              <button class="btn btn-ai-action btn-xs" onclick="openTrackedObjectModal('${event.id}', 'ai')" title="Analisis kejadian dengan Gemini AI">
-                <span class="ai-sparkle">✨</span> AI
               </button>
               <a href="${event.clipUrl}" download class="btn btn-secondary btn-xs" title="Download video rekaman utuh (MP4)">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -775,10 +753,8 @@ window.openTrackedObjectModal = async function(eventId, initialTab = 'details') 
   }
 
   // Switch to initial tab
-  window.switchTrackedTab(initialTab);
-  if (initialTab === 'ai') {
-    window.runAiAnalysis();
-  }
+  const targetTab = (initialTab === 'ai') ? 'details' : initialTab;
+  window.switchTrackedTab(targetTab);
 
   // Open Modal immediately
   modal.style.display = 'flex';
@@ -895,15 +871,15 @@ window.switchTrackedTab = function(tabName) {
   const paneDetails = document.getElementById('tracked-pane-details');
   const paneAi = document.getElementById('tracked-pane-ai');
 
-  pillThumb.classList.toggle('active', tabName === 'thumbnail');
-  pillDetails.classList.toggle('active', tabName === 'details');
-  pillAi.classList.toggle('active', tabName === 'ai');
+  if (pillThumb) pillThumb.classList.toggle('active', tabName === 'thumbnail');
+  if (pillDetails) pillDetails.classList.toggle('active', tabName === 'details');
+  if (pillAi) pillAi.classList.toggle('active', tabName === 'ai');
 
-  paneThumb.style.display = (tabName === 'thumbnail') ? 'block' : 'none';
-  paneDetails.style.display = (tabName === 'details') ? 'block' : 'none';
-  paneAi.style.display = (tabName === 'ai') ? 'block' : 'none';
+  if (paneThumb) paneThumb.style.display = (tabName === 'thumbnail') ? 'block' : 'none';
+  if (paneDetails) paneDetails.style.display = (tabName === 'details') ? 'block' : 'none';
+  if (paneAi) paneAi.style.display = (tabName === 'ai') ? 'block' : 'none';
 
-  if (tabName === 'ai') {
+  if (tabName === 'ai' && typeof window.runAiAnalysis === 'function') {
     window.runAiAnalysis();
   }
 };

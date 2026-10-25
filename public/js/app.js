@@ -26,29 +26,70 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateLiveClocks, 1000);
   updateLiveClocks();
 
-  // Grid layout selector handlers (3x3, 2x2, 1x1)
-  gridButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetGrid = btn.dataset.grid;
+  // Multi-Select Camera Radio/Pill Selector
+  const livePills = document.querySelectorAll('#live-camera-selector .cam-radio-pill');
+  const pillAll = document.querySelector('#live-camera-selector [data-cam="all"]');
 
-      gridButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+  function updateLiveCameraVisibility() {
+    const isAllActive = pillAll && pillAll.classList.contains('active');
+    const activeCamIds = [];
 
-      if (cameraGrid) {
-        cameraGrid.classList.remove('grid-3x3', 'grid-2x2', 'grid-1x1');
-        cameraGrid.classList.add(targetGrid);
-
-        // Visibility management based on layout
-        cards.forEach((card, index) => {
-          if (targetGrid === 'grid-1x1') {
-            card.style.display = index === 0 ? 'flex' : 'none';
-          } else if (targetGrid === 'grid-2x2') {
-            card.style.display = index < 4 ? 'flex' : 'none';
-          } else {
-            card.style.display = 'flex';
-          }
-        });
+    livePills.forEach(p => {
+      if (p !== pillAll && p.classList.contains('active')) {
+        activeCamIds.push(p.dataset.cam);
       }
+    });
+
+    cards.forEach(card => {
+      const camId = card.dataset.camId || card.id.replace('card-', '');
+      if (isAllActive || activeCamIds.length === 0) {
+        card.style.display = 'flex';
+      } else {
+        card.style.display = activeCamIds.includes(camId) ? 'flex' : 'none';
+      }
+    });
+
+    // Auto-adjust grid layout based on number of visible cameras
+    const visibleCount = (isAllActive || activeCamIds.length === 0) ? cards.length : activeCamIds.length;
+    if (cameraGrid) {
+      cameraGrid.classList.remove('grid-3x3', 'grid-2x2', 'grid-1x1');
+      if (visibleCount === 1) {
+        cameraGrid.classList.add('grid-1x1');
+      } else if (visibleCount === 2) {
+        cameraGrid.classList.add('grid-2x2');
+      } else {
+        cameraGrid.classList.add('grid-3x3');
+      }
+    }
+  }
+
+  livePills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const targetCam = pill.dataset.cam;
+
+      if (targetCam === 'all') {
+        // Turn ON 'all', turn OFF all others
+        livePills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+      } else {
+        // Specific camera clicked: Turn OFF 'all'
+        if (pillAll) pillAll.classList.remove('active');
+
+        // Toggle this camera
+        pill.classList.toggle('active');
+
+        // If no specific camera is active, automatically revert to 'all'
+        let anyActive = false;
+        livePills.forEach(p => {
+          if (p !== pillAll && p.classList.contains('active')) anyActive = true;
+        });
+
+        if (!anyActive && pillAll) {
+          pillAll.classList.add('active');
+        }
+      }
+
+      updateLiveCameraVisibility();
     });
   });
 

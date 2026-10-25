@@ -257,6 +257,80 @@ body {
   color: #fff;
 }
 
+/* Multi-Select Camera Pill Selector (Radio-style modern pills) */
+.camera-pills-bar {
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+.camera-pills-field {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.camera-pill-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.35rem 0.2rem 0.6rem 0.2rem;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.camera-pill-selector::-webkit-scrollbar {
+  height: 4px;
+}
+.camera-pill-selector::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.cam-radio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 9999px;
+  color: #94a3b8;
+  font-size: 0.825rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cam-radio-pill:hover {
+  border-color: #38bdf8;
+  color: #f8fafc;
+  background: #1e293b;
+}
+
+.cam-radio-pill .pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #475569;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.cam-radio-pill.active {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(14, 165, 233, 0.15));
+  border-color: #0ea5e9;
+  color: #38bdf8;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
+}
+
+.cam-radio-pill.active .pill-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
 /* Camera Grid (16:9 Aspect Ratio) */
 .camera-grid {
   display: grid;
@@ -350,48 +424,9 @@ body {
   display: block;
 }
 
-/* Live Card Hover Play Overlay & Fullscreen */
+/* Live Card Hover Play Overlay (Disabled per user request for seamless touch/fullscreen) */
 .live-play-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.25);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 0.2s ease, background 0.2s ease;
-  z-index: 5;
-}
-
-.camera-card:hover .live-play-overlay {
-  opacity: 1;
-}
-
-.live-play-circle {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: rgba(15, 23, 42, 0.75);
-  border: 2px solid rgba(56, 189, 248, 0.6);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #38bdf8;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
-}
-
-.camera-card:hover .live-play-circle {
-  transform: scale(1.1);
-  background: rgba(2, 132, 199, 0.85);
-  color: #ffffff;
-  border-color: #38bdf8;
-}
-
-.live-play-circle svg {
-  margin-left: 3px;
+  display: none !important;
 }
 
 .video-loader {
@@ -1350,6 +1385,7 @@ body {
   border: 1px solid #1e293b;
   border-radius: 6px;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 /* Right Column: Tracking Details Sidebar */
@@ -1880,6 +1916,149 @@ body {
 }
 
 @media (max-width: 768px) {
+  /* Header Professional Mobile Layout (Clean Margins & No Overflow) */
+  .header-container {
+    padding: 0.6rem 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    row-gap: 0.6rem;
+  }
+
+  .brand-group {
+    gap: 0.5rem;
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand-title {
+    font-size: 1.1rem;
+  }
+
+  .brand-subtitle {
+    display: none; /* Hide subtitle on mobile for professional compact header */
+  }
+
+  .header-actions {
+    margin-left: auto;
+  }
+
+  .header-actions .btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+    border-radius: 6px;
+  }
+
+  .nav-links {
+    order: 3;
+    width: 100%;
+    display: flex;
+    background: rgba(15, 23, 42, 0.85);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 4px;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  .nav-item {
+    flex: 1;
+    justify-content: center;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.825rem;
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .toolbar-left, .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Modal Responsive Fixes (100% Mobile Viewport & No Horizontal Cutoff) */
+  .modal {
+    padding: 0.35rem;
+  }
+
+  .tracked-modal-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 94vh;
+    border-radius: 10px;
+    margin: 0;
+  }
+
+  .tracked-modal-body {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.75rem 0.5rem;
+    overflow-y: auto;
+  }
+
+  .tracked-video-col {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .tracked-video-wrapper {
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    box-sizing: border-box;
+    border-radius: 6px;
+  }
+
+  .tracked-video-wrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+
+  .tracked-video-controls {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .playback-controls {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .session-nav-controls {
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .tracked-details-col {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.75rem;
+  }
+
+  .filter-card {
+    padding: 0.85rem 0.75rem;
+  }
+
+  .footer {
+    padding: 1.25rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
   .events-pagination-bar {
     flex-direction: column;
     align-items: stretch;
