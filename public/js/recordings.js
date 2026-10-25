@@ -375,12 +375,9 @@ document.addEventListener('DOMContentLoaded', () => {
       renderEventPagination(pagination, loadedEvents.length);
 
     } catch (err) {
-      console.error('Failed to load events:', err);
-      resultsLoading.style.display = 'none';
-      resultsEmpty.style.display = 'block';
-      resultsEmptyMsg.textContent = `Gagal memuat kejadian dari Frigate: ${err.message}`;
-      resultsCount.textContent = 'Error';
-      if (paginationContainer) paginationContainer.style.display = 'none';
+      console.warn('Events fetch failed, automatically falling back to ParadeDB archive:', err);
+      // Seamless auto-fallback to ParadeDB archive search
+      searchArchiveRecordings();
     }
   }
 
