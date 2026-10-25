@@ -4,6 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1024M
     environment:
       - PORT=3000
       - NODE_ENV=production

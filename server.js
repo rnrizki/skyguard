@@ -1049,6 +1049,39 @@ app.post('/api/recordings/batch-sync', async (req, res) => {
   }
 });
 
+// --- API: PRUNE EXPIRED RECORDINGS FROM PARADEDB (Mirror Quota Retention) ---
+app.post('/api/recordings/prune', async (req, res) => {
+  const syncKey = req.headers['x-sync-key'] || req.query.key;
+  if (syncKey !== SYNC_KEY) {
+    return res.status(401).json({ error: 'Invalid or missing X-Sync-Key' });
+  }
+
+  const { before_time, before_date, paths } = req.body || {};
+
+  try {
+    let deletedCount = 0;
+    if (before_time) {
+      const result = await pool.query('DELETE FROM recordfrigate WHERE start_time <= $1;', [Number(before_time)]);
+      deletedCount = result.rowCount || 0;
+    } else if (before_date) {
+      const result = await pool.query('DELETE FROM recordfrigate WHERE date < $1;', [String(before_date)]);
+      deletedCount = result.rowCount || 0;
+    } else if (Array.isArray(paths) && paths.length > 0) {
+      const cleanPaths = paths.map(p => p.replace(/^\/media\/frigate\//, ''));
+      const result = await pool.query('DELETE FROM recordfrigate WHERE path = ANY($1::text[]);', [cleanPaths]);
+      deletedCount = result.rowCount || 0;
+    } else {
+      return res.status(400).json({ error: 'Missing before_time, before_date, or paths parameter' });
+    }
+
+    console.log(`[PRUNE] Deleted ${deletedCount} records from ParadeDB to match OpenWrt 250GB quota.`);
+    res.json({ success: true, deleted_count: deletedCount });
+  } catch (err) {
+    console.error('Prune error:', err);
+    res.status(500).json({ error: 'Database prune error', details: err.message });
+  }
+});
+
 // Stats API
 app.get('/api/recordings/stats', requireAuth, async (req, res) => {
   try {
