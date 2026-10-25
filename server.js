@@ -318,6 +318,15 @@ app.get('/recordings', requireAuth, (req, res) => {
   });
 });
 
+app.get('/history', requireAuth, (req, res) => {
+  res.render('history', {
+    title: 'Surveillance History & Timeline | SkyGuard',
+    activeTab: 'history',
+    cameras: CAMERAS,
+    s3WebConsole: 'https://s3web1.skyconnection.id'
+  });
+});
+
 // --- API: GO2RTC PROXY ---
 app.get('/api/go2rtc/streams', requireAuth, async (req, res) => {
   try {
@@ -2021,6 +2030,199 @@ app.head('/api/recordings/stream', requireAuth, async (req, res) => {
     } catch (_) {}
     res.setHeader('X-S3-Synced', 'false');
     res.status(404).end();
+  }
+});
+
+// --- API: SURVEILLANCE HISTORY & SCRUBBABLE TIMELINE ---
+app.get('/api/history/timeline', requireAuth, async (req, res) => {
+  let { camera, date } = req.query;
+
+  try {
+    // 1. Resolve date if not provided (default to latest date available)
+    if (!date) {
+      const latestDateRes = await pool.query('SELECT date FROM recordfrigate ORDER BY start_time DESC LIMIT 1;');
+      date = latestDateRes.rows[0]?.date || new Date().toISOString().split('T')[0];
+    }
+
+    // 2. Resolve camera (default to teras_depan if all or not provided)
+    const effectiveCam = (camera && camera !== 'all') ? camera.trim() : 'teras_depan';
+
+    // 3. Query segments for this camera and date
+    const segSql = `
+      SELECT id, path, start_time, end_time, duration, objects, motion, hour
+      FROM recordfrigate
+      WHERE camera = $1 AND date = $2
+      ORDER BY start_time ASC;
+    `;
+    const segRes = await pool.query(segSql, [effectiveCam, date]);
+
+    // 4. Query AI events for this camera and date
+    const evSql = `
+      SELECT id, camera, label, sub_label, score, top_score, start_time, end_time, duration, time
+      FROM frigate_events
+      WHERE (camera = $1 OR $1 = 'all') AND date = $2
+      ORDER BY start_time ASC;
+    `;
+    const evRes = await pool.query(evSql, [effectiveCam, date]);
+
+    // 5. Build clean segment objects and waveform bins (1440 minutes = 24 hours)
+    // Initialize 1440 bins (one per minute from 00:00 to 23:59 WIB)
+    const waveform = new Array(1440).fill(null).map((_, idx) => ({
+      minute: idx,
+      hour: Math.floor(idx / 60),
+      min: idx % 60,
+      motion: 0,
+      objects: 0,
+      hasRec: false,
+      hasEvent: false,
+      eventLabel: null,
+      eventScore: null,
+      eventId: null
+    }));
+
+    // Find date start epoch in WIB (UTC+7)
+    // Date format: YYYY-MM-DD
+    const [y, m, d] = date.split('-').map(Number);
+    // Midnight WIB is 17:00 UTC previous day, epoch in seconds:
+    const dayStartEpoch = Math.floor(Date.UTC(y, m - 1, d, 0, 0, 0) / 1000) - (7 * 3600);
+
+    const segments = segRes.rows.map(r => {
+      const key = r.path.replace(/^\/media\/frigate\//, '');
+      const parts = key.split('/');
+      const filename = parts[parts.length - 1] || '';
+      const timeStr = filename.replace('.mp4', '').replace('.', ':');
+      const sTime = Number(r.start_time);
+      const dur = Math.round(Number(r.duration) || 10);
+      const eTime = r.end_time ? Number(r.end_time) : (sTime + dur);
+      const mot = Number(r.motion) || 0;
+      const obj = Number(r.objects) || 0;
+
+      // Map to waveform bin
+      const secIntoDay = sTime - dayStartEpoch;
+      if (secIntoDay >= 0 && secIntoDay < 86400) {
+        const binIdx = Math.floor(secIntoDay / 60);
+        if (binIdx >= 0 && binIdx < 1440) {
+          waveform[binIdx].hasRec = true;
+          waveform[binIdx].motion = Math.max(waveform[binIdx].motion, mot);
+          waveform[binIdx].objects = Math.max(waveform[binIdx].objects, obj);
+        }
+      }
+
+      return {
+        id: r.id,
+        key: key,
+        time: `${r.hour}:${timeStr}`,
+        startTime: sTime,
+        endTime: eTime,
+        duration: dur,
+        motion: mot,
+        objects: obj
+      };
+    });
+
+    // Overlay AI Events on Waveform
+    const events = evRes.rows.map(ev => {
+      const sTime = Number(ev.start_time);
+      const secIntoDay = sTime - dayStartEpoch;
+      if (secIntoDay >= 0 && secIntoDay < 86400) {
+        const binIdx = Math.floor(secIntoDay / 60);
+        if (binIdx >= 0 && binIdx < 1440) {
+          waveform[binIdx].hasEvent = true;
+          waveform[binIdx].eventLabel = ev.label;
+          waveform[binIdx].eventScore = ev.score;
+          waveform[binIdx].eventId = ev.id;
+        }
+      }
+      return {
+        id: ev.id,
+        camera: ev.camera,
+        label: ev.label,
+        subLabel: ev.sub_label,
+        score: Math.round((Number(ev.score) || 0) * 100),
+        topScore: Math.round((Number(ev.top_score) || 0) * 100),
+        startTime: sTime,
+        endTime: ev.end_time ? Number(ev.end_time) : (sTime + (ev.duration || 10)),
+        duration: Math.round(Number(ev.duration) || 0),
+        time: ev.time,
+        thumbnailUrl: `/api/events/${ev.id}/thumbnail.webp`
+      };
+    });
+
+    res.json({
+      success: true,
+      camera: effectiveCam,
+      date: date,
+      dayStartEpoch: dayStartEpoch,
+      segmentCount: segments.length,
+      eventCount: events.length,
+      segments: segments,
+      waveform: waveform,
+      events: events
+    });
+  } catch (err) {
+    console.error('History timeline query error:', err);
+    res.status(500).json({ error: 'Failed to generate timeline', details: err.message });
+  }
+});
+
+// Get segments for other cameras at a specific timestamp
+app.get('/api/history/cameras-at-time', requireAuth, async (req, res) => {
+  const { timestamp, date } = req.query;
+  const ts = Number(timestamp);
+  if (!ts) {
+    return res.status(400).json({ error: 'Timestamp is required' });
+  }
+
+  try {
+    const cameraResults = [];
+
+    // Query closest segment for each camera
+    for (const cam of CAMERAS) {
+      const q = `
+        SELECT id, camera, path, start_time, end_time, duration, motion, objects
+        FROM recordfrigate
+        WHERE camera = $1 AND start_time <= $2 AND (end_time >= $2 OR start_time + 15 >= $2)
+        ORDER BY start_time DESC
+        LIMIT 1;
+      `;
+      let r = await pool.query(q, [cam.id, ts]);
+
+      if (!r.rows.length && date) {
+        // Fallback: closest segment on that date
+        const fallbackQ = `
+          SELECT id, camera, path, start_time, end_time, duration, motion, objects
+          FROM recordfrigate
+          WHERE camera = $1 AND date = $2
+          ORDER BY ABS(start_time - $3) ASC
+          LIMIT 1;
+        `;
+        r = await pool.query(fallbackQ, [cam.id, date, ts]);
+      }
+
+      if (r.rows.length) {
+        const seg = r.rows[0];
+        const key = seg.path.replace(/^\/media\/frigate\//, '');
+        cameraResults.push({
+          id: cam.id,
+          name: cam.name,
+          hasSegment: true,
+          key: key,
+          startTime: Number(seg.start_time),
+          motion: Number(seg.motion) || 0,
+          streamUrl: `/api/recordings/stream?key=${encodeURIComponent(key)}`
+        });
+      } else {
+        cameraResults.push({
+          id: cam.id,
+          name: cam.name,
+          hasSegment: false
+        });
+      }
+    }
+
+    res.json({ timestamp: ts, cameras: cameraResults });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get cameras at timestamp', details: err.message });
   }
 });
 

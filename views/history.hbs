@@ -1,0 +1,272 @@
+<div class="page-container history-page">
+  <!-- Page Header & Title -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <h2 class="section-title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        Surveillance History & Scrubbable Timeline
+      </h2>
+      <span class="badge badge-info" id="history-date-badge">Memuat Riwayat...</span>
+    </div>
+    <div class="toolbar-right">
+      <div class="history-quick-stats">
+        <span class="stat-pill"><span class="stat-dot dot-green"></span> S3 RustFS Streaming</span>
+        <span class="stat-pill" id="stat-segments-count"><span class="stat-dot dot-blue"></span> 0 Segmen</span>
+        <span class="stat-pill" id="stat-events-count"><span class="stat-dot dot-orange"></span> 0 Event AI</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Select Camera Radio/Pill Bar (Exact same layout as Live & Archive tabs) -->
+  <div class="camera-pills-bar">
+    <div class="camera-pill-selector" id="history-camera-selector">
+      <button type="button" class="cam-radio-pill active" data-cam="all">
+        <span class="pill-dot"></span>
+        <span>Semua Kamera</span>
+      </button>
+      {{#each cameras}}
+      <button type="button" class="cam-radio-pill" data-cam="{{this.id}}">
+        <span class="pill-dot"></span>
+        <span>{{this.name}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
+
+  <!-- Controls Bar: Date Selector, Zoom, and Jump to Motion -->
+  <div class="history-controls-card">
+    <div class="history-controls-row">
+      <!-- Date Dropdown Selector -->
+      <div class="control-group">
+        <label for="history-date-select">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Tanggal (WIB):
+        </label>
+        <select id="history-date-select" class="form-select history-select">
+          <option value="">Memuat tanggal...</option>
+        </select>
+      </div>
+
+      <!-- Current Scrubbed Timestamp Badge -->
+      <div class="current-time-display">
+        <span class="time-label">WAKTU REKAMAN (WIB):</span>
+        <span class="time-value" id="history-current-timestamp">--:--:--</span>
+      </div>
+
+      <!-- Quick Motion Jump Controls -->
+      <div class="motion-jump-group">
+        <button type="button" class="btn btn-sm btn-secondary" id="btn-prev-motion" title="Lompat ke Gerakan Sebelumnya">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="19 20 9 12 19 4 19 20"></polygon>
+            <line x1="5" y1="19" x2="5" y2="5"></line>
+          </svg>
+          Prev Motion
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary" id="btn-next-motion" title="Lompat ke Gerakan Berikutnya">
+          Next Motion
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+            <line x1="19" y1="5" x2="19" y2="19"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Zoom Range Selector -->
+      <div class="zoom-range-group">
+        <span class="zoom-label">Rentang:</span>
+        <button type="button" class="zoom-btn active" data-zoom="24">24 Jam</button>
+        <button type="button" class="zoom-btn" data-zoom="12">12 Jam</button>
+        <button type="button" class="zoom-btn" data-zoom="6">6 Jam</button>
+        <button type="button" class="zoom-btn" data-zoom="1">1 Jam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main History Workspace: Left Player + Right Camera Grid/Events -->
+  <div class="history-workspace">
+    <!-- Main Video Section -->
+    <div class="history-main-player">
+      <div class="video-container history-video-container">
+        <!-- HTML5 Video Player -->
+        <video id="history-video-player" playsinline preload="auto">
+          Browser Anda tidak mendukung pemutar video MP4.
+        </video>
+
+        <!-- Video Overlay Header -->
+        <div class="video-overlay-header">
+          <div class="video-overlay-left">
+            <span class="active-cam-title" id="history-video-camera-name">Teras Depan</span>
+            <span class="video-source-pill" id="history-video-source">S3 RustFS</span>
+          </div>
+          <div class="video-overlay-right">
+            <span class="segment-duration-tag" id="history-segment-info">Segmen 10s</span>
+          </div>
+        </div>
+
+        <!-- Video Loading Spinner -->
+        <div class="history-video-loading" id="history-video-loading" style="display: none;">
+          <div class="loading-spinner"></div>
+          <span id="history-loading-text">Memuat segmen video dari RustFS...</span>
+        </div>
+
+        <!-- No Video Available Banner -->
+        <div class="history-no-video" id="history-no-video" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+            <line x1="7" y1="2" x2="7" y2="22"></line>
+            <line x1="17" y1="2" x2="17" y2="22"></line>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <line x1="2" y1="7" x2="7" y2="7"></line>
+            <line x1="2" y1="17" x2="7" y2="17"></line>
+            <line x1="17" y1="17" x2="22" y2="17"></line>
+            <line x1="17" y1="7" x2="22" y2="7"></line>
+          </svg>
+          <h3>Tidak Ada Rekaman di Waktu Ini</h3>
+          <p>Kamera tidak merekam atau segmen belum disinkronkan pada jam ini.</p>
+        </div>
+      </div>
+
+      <!-- Player Custom Toolbar (Play, Jump, Speed, Fullscreen) -->
+      <div class="history-playback-toolbar">
+        <div class="playback-controls-left">
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-jump-back" title="Mundur 10 Detik">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/>
+            </svg>
+            -10s
+          </button>
+          <button type="button" class="btn btn-primary btn-icon" id="btn-play-pause" title="Play / Pause">
+            <svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <svg id="icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+              <rect x="6" y="4" width="4" height="16"></rect>
+              <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+            <span id="label-play-pause">Play</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-jump-fwd" title="Maju 10 Detik">
+            +10s
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 17l5-5-5-5M6 17l5-5-5-5"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="playback-controls-center">
+          <div class="speed-selector">
+            <span class="speed-label">Kecepatan:</span>
+            <button type="button" class="speed-btn" data-speed="0.5">0.5x</button>
+            <button type="button" class="speed-btn active" data-speed="1">1x</button>
+            <button type="button" class="speed-btn" data-speed="2">2x</button>
+            <button type="button" class="speed-btn" data-speed="4">4x</button>
+          </div>
+        </div>
+
+        <div class="playback-controls-right">
+          <a href="#" class="btn btn-secondary btn-sm" id="btn-download-segment" target="_blank" download title="Unduh Segmen MP4 Ini">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download Segmen
+          </a>
+          <button type="button" class="btn btn-secondary btn-icon" id="btn-fullscreen" title="Layar Penuh">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrubbable Timeline & Motion Waveform Container -->
+      <div class="timeline-wrapper">
+        <div class="timeline-header-legend">
+          <div class="legend-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            Motion & Event Waveform
+          </div>
+          <div class="timeline-legend-items">
+            <span class="legend-item"><span class="legend-color color-recording"></span> Rekaman Kontinu</span>
+            <span class="legend-item"><span class="legend-color color-motion"></span> Pergerakan (Motion)</span>
+            <span class="legend-item"><span class="legend-color color-event"></span> Objek AI (Person / Car)</span>
+          </div>
+        </div>
+
+        <!-- The Interactive Scrubber Canvas Component -->
+        <div class="timeline-scrubber-area" id="timeline-scrubber-area">
+          <!-- Time Ruler (Hours & Sub-Ticks) -->
+          <div class="timeline-ruler" id="timeline-ruler"></div>
+
+          <!-- Waveform Canvas -->
+          <canvas id="timeline-waveform-canvas" height="80"></canvas>
+
+          <!-- Draggable Playhead Scrubber Needle -->
+          <div class="timeline-playhead" id="timeline-playhead">
+            <div class="playhead-badge" id="playhead-badge">12:00:00</div>
+            <div class="playhead-line"></div>
+            <div class="playhead-handle"></div>
+          </div>
+
+          <!-- Hover Tooltip -->
+          <div class="timeline-hover-tooltip" id="timeline-hover-tooltip" style="display: none;">
+            <div class="tooltip-time" id="tooltip-time">12:00:00</div>
+            <div class="tooltip-info" id="tooltip-info">Klik untuk lompat</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Side Panel: Other Cameras at this Timestamp & AI Events -->
+    <div class="history-side-panel">
+      <!-- Section 1: Other Cameras at this Timestamp (Frigate Review Style) -->
+      <div class="side-panel-section">
+        <div class="side-section-header">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+              <line x1="7" y1="2" x2="7" y2="22"></line>
+              <line x1="17" y1="2" x2="17" y2="22"></line>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+            </svg>
+            Kamera Lain di Waktu Ini
+          </h3>
+          <span class="badge badge-secondary" id="side-cams-count">8 Kamera</span>
+        </div>
+        <div class="side-camera-list" id="side-camera-list">
+          <!-- Dynamic camera thumbnails loaded via JS -->
+          <div class="side-cam-empty">Memuat cuplikan kamera lain...</div>
+        </div>
+      </div>
+
+      <!-- Section 2: AI Events for this Date -->
+      <div class="side-panel-section">
+        <div class="side-section-header">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            Event Deteksi AI Hari Ini
+          </h3>
+          <span class="badge badge-orange" id="side-events-count">0</span>
+        </div>
+        <div class="side-events-list" id="side-events-list">
+          <div class="side-events-empty">Tidak ada event deteksi pada tanggal ini.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/history.js"></script>
