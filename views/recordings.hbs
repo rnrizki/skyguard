@@ -12,26 +12,26 @@
     </div>
   </div>
 
+  <!-- Multi-Select Camera Radio/Pill Bar (Exact same layout as Live tab) -->
+  <div class="camera-pills-bar">
+    <div class="camera-pill-selector" id="recordings-camera-selector">
+      <button type="button" class="cam-radio-pill active" data-cam="all">
+        <span class="pill-dot"></span>
+        <span>Semua Kamera</span>
+      </button>
+      {{#each cameras}}
+      <button type="button" class="cam-radio-pill" data-cam="{{this.id}}">
+        <span class="pill-dot"></span>
+        <span>{{this.name}}</span>
+      </button>
+      {{/each}}
+    </div>
+  </div>
+
   <!-- Search & Filter Card -->
   <div class="filter-card">
     <form id="recordings-filter-form" class="filter-form">
-      <!-- Multi-Select Camera Radio/Pill Bar -->
-      <div class="form-field camera-pills-field">
-        <label>Filter Kamera (Bisa pilih 1, 2, atau beberapa kamera serentak)</label>
-        <input type="hidden" id="filter-camera" name="camera" value="all">
-        <div class="camera-pill-selector" id="recordings-camera-selector">
-          <button type="button" class="cam-radio-pill active" data-cam="all">
-            <span class="pill-dot"></span>
-            <span>Semua Kamera</span>
-          </button>
-          {{#each cameras}}
-          <button type="button" class="cam-radio-pill" data-cam="{{this.id}}">
-            <span class="pill-dot"></span>
-            <span>{{this.name}}</span>
-          </button>
-          {{/each}}
-        </div>
-      </div>
+      <input type="hidden" id="filter-camera" name="camera" value="all">
 
       <!-- Object Label Filter (Active in Events Mode) -->
       <div class="form-field" id="field-filter-label">
