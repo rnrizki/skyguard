@@ -31,8 +31,6 @@
   const cameraSelector = document.getElementById('history-camera-selector');
   const dateBadge = document.getElementById('history-date-badge');
   const currentTimestampEl = document.getElementById('history-current-timestamp');
-  const statSegmentsEl = document.getElementById('stat-segments-count');
-  const statEventsEl = document.getElementById('stat-events-count');
 
   const videoCamName = document.getElementById('history-video-camera-name');
   const videoSourcePill = document.getElementById('history-video-source');
@@ -62,8 +60,6 @@
   const tooltipInfo = document.getElementById('tooltip-info');
 
   const sideCameraList = document.getElementById('side-camera-list');
-  const sideEventsList = document.getElementById('side-events-list');
-  const sideEventsCountBadge = document.getElementById('side-events-count');
 
   // --- Formatting Helpers ---
   function formatWibTime(epochSeconds) {
@@ -161,15 +157,10 @@
       waveform = data.waveform || [];
       events = data.events || [];
 
-      statSegmentsEl.innerHTML = `<span class="stat-dot dot-blue"></span> ${segments.length} Segmen`;
-      statEventsEl.innerHTML = `<span class="stat-dot dot-orange"></span> ${events.length} Event AI`;
-      sideEventsCountBadge.textContent = events.length;
-
       // Update camera title
       updateCameraPillUI(currentCamera);
       renderRuler();
       drawWaveform();
-      renderSideEventsList();
 
       if (segments.length > 0) {
         let targetIndex = 0;
@@ -683,53 +674,6 @@
       });
 
       sideCameraList.appendChild(card);
-    });
-  }
-
-  // --- Side AI Events List ---
-  function renderSideEventsList() {
-    sideEventsList.innerHTML = '';
-    if (!events.length) {
-      sideEventsList.innerHTML = '<div class="side-events-empty">Tidak ada event deteksi AI pada tanggal ini.</div>';
-      return;
-    }
-
-    events.forEach(ev => {
-      const card = document.createElement('div');
-      card.className = 'side-event-item';
-      card.innerHTML = `
-        <div class="side-event-thumb">
-          <img src="${ev.thumbnailUrl}" alt="${ev.label}" onerror="this.src='/favicon.svg';">
-          <span class="side-event-score">${ev.score}%</span>
-        </div>
-        <div class="side-event-details">
-          <div class="side-event-label">
-            <span class="label-name">${ev.label.toUpperCase()}</span>
-            <span class="label-cam">${getCameraDisplayName(ev.camera)}</span>
-          </div>
-          <div class="side-event-time">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            ${ev.time} WIB (${ev.duration}s)
-          </div>
-        </div>
-      `;
-
-      card.addEventListener('click', () => {
-        // Switch camera if needed and seek to event start time
-        if (ev.camera !== currentCamera) {
-          loadTimeline(ev.camera, currentDate, ev.startTime);
-        } else {
-          const idx = findSegmentIndexForEpoch(ev.startTime);
-          if (idx >= 0) {
-            playSegmentAtIndex(idx, 0, true);
-          }
-        }
-      });
-
-      sideEventsList.appendChild(card);
     });
   }
 

@@ -2630,9 +2630,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  max-height: 380px;
+  max-height: calc(100vh - 220px);
+  min-height: 520px;
   overflow-y: auto;
-  padding-right: 0.25rem;
+  padding-right: 0.35rem;
 }
 
 .side-cam-card {
@@ -2715,98 +2716,10 @@ body {
   font-weight: 600;
 }
 
-.side-cam-empty, .side-events-empty {
+.side-cam-empty {
   font-size: 0.8rem;
   color: var(--text-muted);
   text-align: center;
   padding: 1.5rem 0.5rem;
-}
-
-.side-events-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  max-height: 320px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
-}
-
-.side-event-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.side-event-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(245, 158, 11, 0.4);
-  transform: translateX(3px);
-}
-
-.side-event-thumb {
-  position: relative;
-  width: 60px;
-  height: 42px;
-  background: #0f172a;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.side-event-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.side-event-score {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  background: rgba(239, 68, 68, 0.9);
-  color: #ffffff;
-  font-size: 0.55rem;
-  font-weight: 700;
-  padding: 0.05rem 0.25rem;
-  border-radius: 2px;
-}
-
-.side-event-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  overflow: hidden;
-}
-
-.side-event-label {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.side-event-label .label-name {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #f59e0b;
-}
-
-.side-event-label .label-cam {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.side-event-time {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
 }
 
