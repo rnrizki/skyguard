@@ -12,9 +12,6 @@ class SkyStreamer {
     this.loader = document.getElementById(loaderId);
     this.pc = null;
     this.reconnectTimer = null;
-    this.watchdogInterval = null;
-    this.lastCurrentTime = -1;
-    this.stallTicks = 0;
     this.isClosed = false;
     this.retryCount = 0;
   }
@@ -56,7 +53,6 @@ class SkyStreamer {
             this.loader.style.display = 'none';
           }
           this.retryCount = 0;
-          this.startWatchdog();
         }
       };
 
@@ -64,10 +60,9 @@ class SkyStreamer {
         const state = this.pc?.connectionState;
         if (state === 'connected') {
           if (this.loader) this.loader.style.display = 'none';
-          this.startWatchdog();
         } else if (state === 'failed' || state === 'disconnected') {
           console.warn(`Stream [${this.streamName}] connection state: ${state}. Reconnecting...`);
-          this.scheduleReconnect(2500);
+          this.scheduleReconnect(3000);
         }
       };
 
@@ -137,51 +132,7 @@ class SkyStreamer {
     }, delayMs);
   }
 
-  startWatchdog() {
-    this.stopWatchdog();
-    this.lastCurrentTime = -1;
-    this.stallTicks = 0;
-    this.watchdogInterval = setInterval(() => {
-      if (this.isClosed || !this.video || !this.pc) return;
-      if (document.visibilityState === 'hidden') return;
-
-      // Ensure video is not paused by browser
-      if (this.pc.connectionState === 'connected' && this.video.srcObject) {
-        if (this.video.paused) {
-          this.video.play().catch(() => {});
-        }
-
-        const curTime = this.video.currentTime;
-        if (curTime > 0) {
-          if (Math.abs(curTime - this.lastCurrentTime) < 0.05) {
-            this.stallTicks++;
-            // Kickstart playback
-            this.video.play().catch(() => {});
-
-            // If time hasn't moved for 3 checks (~7.5s), trigger clean reconnect
-            if (this.stallTicks >= 3) {
-              console.warn(`[SkyStreamer] Video freeze detected for [${this.streamName}] at ${curTime.toFixed(2)}s. Auto-reconnecting...`);
-              this.stallTicks = 0;
-              this.connect();
-            }
-          } else {
-            this.stallTicks = 0;
-            this.lastCurrentTime = curTime;
-          }
-        }
-      }
-    }, 2500);
-  }
-
-  stopWatchdog() {
-    if (this.watchdogInterval) {
-      clearInterval(this.watchdogInterval);
-      this.watchdogInterval = null;
-    }
-  }
-
   cleanupPeerConnection() {
-    this.stopWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -205,22 +156,3 @@ class SkyStreamer {
 
 // Global registry of camera streamers
 window.skyStreamers = {};
-
-// Auto-recover streams when tab/phone becomes visible again
-if (!window._skyStreamerVisibilityAttached) {
-  window._skyStreamerVisibilityAttached = true;
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      const streamers = Object.values(window.skyStreamers || {});
-      streamers.forEach(streamer => {
-        if (streamer && !streamer.isClosed && streamer.video) {
-          if (streamer.video.paused) {
-            streamer.video.play().catch(() => {});
-          }
-          streamer.lastCurrentTime = -1;
-          streamer.stallTicks = 0;
-        }
-      });
-    }
-  });
-}
