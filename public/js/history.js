@@ -252,8 +252,18 @@
   // --- Render Time Ruler ---
   function renderRuler() {
     rulerEl.innerHTML = '';
+    const isMobile = window.innerWidth <= 640;
     const totalMinutes = zoomHours * 60;
-    const stepHours = zoomHours <= 2 ? 0.25 : (zoomHours <= 6 ? 1 : 2); // Intervals
+    let stepHours;
+    if (zoomHours <= 1) {
+      stepHours = isMobile ? 0.25 : 0.1666;
+    } else if (zoomHours <= 6) {
+      stepHours = isMobile ? 2 : 1;
+    } else if (zoomHours <= 12) {
+      stepHours = isMobile ? 3 : 2;
+    } else {
+      stepHours = isMobile ? 4 : 2;
+    }
     const stepMinutes = stepHours * 60;
 
     for (let m = 0; m <= totalMinutes; m += stepMinutes) {
@@ -377,7 +387,8 @@
   // --- Timeline Drag & Click Scrubbing ---
   function handleTimelineInteraction(e, isCommit = false) {
     const rect = scrubberArea.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const touchObj = (e.touches && e.touches.length > 0) ? e.touches[0] : ((e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0] : e);
+    const clientX = (touchObj && typeof touchObj.clientX === 'number') ? touchObj.clientX : e.clientX;
     const offsetX = Math.max(0, Math.min(rect.width, clientX - rect.left));
     const pct = offsetX / rect.width;
 
@@ -565,9 +576,10 @@
 
     scrubberArea.addEventListener('touchmove', (e) => {
       if (isDragging) {
+        if (e.cancelable) e.preventDefault();
         handleTimelineInteraction(e, false);
       }
-    }, { passive: true });
+    }, { passive: false });
 
     scrubberArea.addEventListener('touchend', (e) => {
       if (isDragging) {
@@ -651,20 +663,23 @@
       card.className = `side-cam-card ${c.hasSegment ? 'has-media' : 'no-media'}`;
       card.title = `Klik untuk beralih ke ${c.name} pada jam ini`;
 
+      const badgeText = c.motion > 0 ? '⚡ Motion' : (c.hasSegment ? 'REC' : 'Kosong');
+      const badgeClass = c.motion > 0 ? 'badge-motion' : (c.hasSegment ? 'badge-rec' : 'badge-empty');
+      const actionText = c.hasSegment ? 'Tukar &rarr;' : 'Tidak Ada';
+
       card.innerHTML = `
         <div class="side-cam-thumb">
           <div class="side-cam-placeholder">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
               <circle cx="12" cy="13" r="4"></circle>
             </svg>
-            <span>${c.hasSegment ? 'Putar Kamera Ini' : 'Tidak Ada Rekaman'}</span>
           </div>
-          <span class="side-cam-badge">${c.motion > 0 ? '⚡ Motion' : 'REC'}</span>
+          <span class="side-cam-badge ${badgeClass}">${badgeText}</span>
         </div>
         <div class="side-cam-info">
           <span class="side-cam-name">${c.name}</span>
-          <span class="side-cam-action">Tukar Tampilan &rarr;</span>
+          <span class="side-cam-action">${actionText}</span>
         </div>
       `;
 
