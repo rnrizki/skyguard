@@ -318,10 +318,10 @@ app.get('/recordings', requireAuth, (req, res) => {
   });
 });
 
-app.get('/history', requireAuth, (req, res) => {
+app.get(['/timeline', '/history'], requireAuth, (req, res) => {
   res.render('history', {
-    title: 'Surveillance History & Timeline | SkyGuard',
-    activeTab: 'history',
+    title: 'Surveillance Timeline & Waveform | SkyGuard',
+    activeTab: 'timeline',
     cameras: CAMERAS,
     s3WebConsole: 'https://s3web1.skyconnection.id'
   });
