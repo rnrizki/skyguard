@@ -128,6 +128,7 @@ app.engine('hbs', engine({
   layoutsDir: path.join(__dirname, 'views/layouts'),
   helpers: {
     eq: (a, b) => a === b,
+    or: (...args) => args.slice(0, -1).some(Boolean),
     formatDate: (d) => new Date(d).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
   }
 }));
