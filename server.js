@@ -329,6 +329,14 @@ app.get(['/timeline', '/history'], requireAuth, (req, res) => {
   });
 });
 
+app.get('/ptz', requireAuth, (req, res) => {
+  res.render('ptz', {
+    title: 'PTZ Camera Control | SkyGuard',
+    activeTab: 'ptz',
+    cameras: CAMERAS.filter(c => c.id.startsWith('dcs_5020'))
+  });
+});
+
 // --- API: GO2RTC PROXY ---
 async function ensureGo2rtcStreams() {
   try {

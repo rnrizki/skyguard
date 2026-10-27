@@ -45,6 +45,32 @@
           </svg>
           Timeline
         </a>
+        <div class="nav-dropdown-wrapper">
+          <a href="/ptz" class="nav-item {{#if (eq activeTab 'ptz')}}active{{/if}}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+            </svg>
+            PTZ
+            <svg class="dropdown-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </a>
+          <div class="nav-dropdown-menu">
+            <a href="http://100.65.136.42:8080/ptz.html" target="_blank" rel="noopener noreferrer" class="dropdown-item">
+              <span class="dropdown-dot green"></span>
+              <div>
+                <div class="dropdown-title">5020 (Lounge)</div>
+                <div class="dropdown-sub">100.65.136.42:8080 ↗</div>
+              </div>
+            </a>
+            <a href="http://100.65.136.42:8080/ptz-b.html" target="_blank" rel="noopener noreferrer" class="dropdown-item">
+              <span class="dropdown-dot blue"></span>
+              <div>
+                <div class="dropdown-title">5020B (Port 9)</div>
+                <div class="dropdown-sub">100.65.136.42:8080 ↗</div>
+              </div>
+            </a>
+          </div>
+        </div>
       </nav>
 
       <div class="header-actions">

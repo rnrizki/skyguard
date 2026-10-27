@@ -1,0 +1,103 @@
+<div class="page-container ptz-page">
+  <!-- Page Header Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <h2 class="page-title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #38bdf8;">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+        </svg>
+        PTZ Camera Controllers
+      </h2>
+      <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">2 Kamera Pan &amp; Tilt</span>
+    </div>
+    <div class="toolbar-right">
+      <span class="text-muted" style="font-size: 0.85rem;">Dedicated Remote Pan &amp; Tilt Hub &bull; Port 8080</span>
+    </div>
+  </div>
+
+  <!-- PTZ Selection Cards Grid -->
+  <div class="ptz-cards-grid">
+    <!-- Camera 1: 5020 (Lounge) -->
+    <div class="ptz-card">
+      <div class="ptz-card-header">
+        <div class="ptz-card-title-group">
+          <span class="status-indicator online"></span>
+          <h3 class="ptz-card-name">5020 (Lounge)</h3>
+          <span class="ptz-ip-badge">192.168.50.50</span>
+        </div>
+        <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3);">ONLINE</span>
+      </div>
+
+      <div class="ptz-card-preview">
+        <img src="/api/go2rtc/frame.jpeg?src=dcs_5020l" alt="Preview 5020 Lounge" class="ptz-preview-img" onerror="this.onerror=null; this.src='/placeholder-camera.svg';">
+        <div class="ptz-preview-overlay">
+          <span>Native 640x480 &bull; H.264 WebRTC Stream</span>
+        </div>
+      </div>
+
+      <div class="ptz-card-body">
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Lokasi:</span>
+          <span class="ptz-info-val">Indoor Lounge Area</span>
+        </div>
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Target URL:</span>
+          <span class="ptz-info-val font-mono">http://100.65.136.42:8080/ptz.html</span>
+        </div>
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Fitur Kontrol:</span>
+          <span class="ptz-info-val">D-Pad 8-Arah &bull; Home &bull; Step (3&deg;, 5&deg;, 10&deg;)</span>
+        </div>
+      </div>
+
+      <div class="ptz-card-footer">
+        <a href="http://100.65.136.42:8080/ptz.html" target="_blank" rel="noopener noreferrer" class="btn btn-primary ptz-launch-btn">
+          <span>🎮 Buka Kontrol 5020 (Lounge)</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+      </div>
+    </div>
+
+    <!-- Camera 2: 5020B (Port 9) -->
+    <div class="ptz-card ptz-card-highlight">
+      <div class="ptz-card-header">
+        <div class="ptz-card-title-group">
+          <span class="status-indicator online"></span>
+          <h3 class="ptz-card-name">5020B (Port 9)</h3>
+          <span class="ptz-ip-badge">192.168.50.51</span>
+        </div>
+        <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">KAMERA BARU</span>
+      </div>
+
+      <div class="ptz-card-preview">
+        <img src="/api/go2rtc/frame.jpeg?src=dcs_5020b" alt="Preview 5020B Port 9" class="ptz-preview-img" onerror="this.onerror=null; this.src='/placeholder-camera.svg';">
+        <div class="ptz-preview-overlay">
+          <span>Native 640x480 &bull; Switch Port 9 VLAN 50</span>
+        </div>
+      </div>
+
+      <div class="ptz-card-body">
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Lokasi:</span>
+          <span class="ptz-info-val">Area Port 9 (VLAN 50 CCTV)</span>
+        </div>
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Target URL:</span>
+          <span class="ptz-info-val font-mono">http://100.65.136.42:8080/ptz-b.html</span>
+        </div>
+        <div class="ptz-info-row">
+          <span class="ptz-info-label">Fitur Kontrol:</span>
+          <span class="ptz-info-val">D-Pad 8-Arah &bull; Home &bull; Step (3&deg;, 5&deg;, 10&deg;)</span>
+        </div>
+      </div>
+
+      <div class="ptz-card-footer">
+        <a href="http://100.65.136.42:8080/ptz-b.html" target="_blank" rel="noopener noreferrer" class="btn btn-accent ptz-launch-btn">
+          <span>🎮 Buka Kontrol 5020B (Port 9)</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
