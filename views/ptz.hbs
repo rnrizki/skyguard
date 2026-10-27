@@ -1,8 +1,8 @@
-<div class="page-container ptz-page">
+<div class="page-container ptz-page-container">
   <!-- Page Header Toolbar -->
   <div class="toolbar">
     <div class="toolbar-left">
-      <h2 class="page-title">
+      <h2 class="section-title">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #38bdf8;">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
@@ -12,92 +12,352 @@
       <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">2 Kamera Pan &amp; Tilt</span>
     </div>
     <div class="toolbar-right">
-      <span class="text-muted" style="font-size: 0.85rem;">Dedicated Remote Pan &amp; Tilt Hub &bull; Port 8080</span>
+      <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3);">
+        <span class="status-indicator online" style="margin-right: 4px;"></span>
+        Direct Web Routing
+      </span>
     </div>
   </div>
 
-  <!-- PTZ Selection Cards Grid -->
-  <div class="ptz-cards-grid">
-    <!-- Camera 1: 5020 (Lounge) -->
-    <div class="ptz-card">
-      <div class="ptz-card-header">
-        <div class="ptz-card-title-group">
-          <span class="status-indicator online"></span>
-          <h3 class="ptz-card-name">5020 (Lounge)</h3>
-          <span class="ptz-ip-badge">192.168.50.50</span>
+  <!-- Camera Selector Radio/Pill Bar -->
+  <div class="camera-pills-bar">
+    <div class="camera-pill-selector" id="ptz-camera-selector">
+      <button type="button" class="cam-radio-pill {{#if (eq initialCam '5020')}}active{{/if}}" data-cam="5020" data-stream="dcs_5020l" data-name="5020 (Lounge)" data-loc="Indoor Lounge Area" data-ip="192.168.50.50">
+        <span class="pill-dot"></span>
+        <span>5020 (Lounge)</span>
+      </button>
+      <button type="button" class="cam-radio-pill {{#if (eq initialCam '5020b')}}active{{/if}}" data-cam="5020b" data-stream="dcs_5020b" data-name="5020B (Port 9)" data-loc="Port 9 (VLAN 50 CCTV)" data-ip="192.168.50.51">
+        <span class="pill-dot"></span>
+        <span>5020B (Port 9)</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Workspace Grid: Video Monitor + PTZ Control Panel -->
+  <div class="ptz-workspace-grid">
+    <!-- Left Column: Live WebRTC Video Monitor -->
+    <div class="ptz-monitor-card" id="ptz-monitor-card">
+      <div class="ptz-monitor-header">
+        <div class="ptz-cam-info">
+          <div class="ptz-cam-title-line">
+            <span class="status-indicator online"></span>
+            <h3 class="ptz-cam-title" id="ptz-cam-title">{{#if (eq initialCam '5020b')}}5020B (Port 9){{else}}5020 (Lounge){{/if}}</h3>
+          </div>
+          <span class="ptz-cam-sub" id="ptz-cam-sub">
+            {{#if (eq initialCam '5020b')}}Port 9 (VLAN 50 CCTV) &bull; 192.168.50.51{{else}}Indoor Lounge Area &bull; 192.168.50.50{{/if}}
+          </span>
         </div>
-        <span class="badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3);">ONLINE</span>
+        <div class="camera-controls">
+          <button class="cam-btn btn-fullscreen" title="Fullscreen Monitor" onclick="togglePtzFullscreen()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div class="ptz-card-preview">
-        <img src="/api/go2rtc/frame.jpeg?src=dcs_5020l" alt="Preview 5020 Lounge" class="ptz-preview-img" onerror="this.onerror=null; this.src='/placeholder-camera.svg';">
-        <div class="ptz-preview-overlay">
-          <span>Native 640x480 &bull; H.264 WebRTC Stream</span>
+      <div class="ptz-video-viewport" id="ptz-viewport">
+        <!-- Live WebRTC Loading Spinner -->
+        <div class="video-loader" id="ptz-loader">
+          <div class="spinner"></div>
+          <span>Menghubungkan WebRTC Stream...</span>
         </div>
+
+        <!-- Video Player -->
+        <video 
+          id="ptz-video" 
+          autoplay 
+          muted 
+          playsinline 
+          class="ptz-video-element"
+        ></video>
       </div>
 
-      <div class="ptz-card-body">
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Lokasi:</span>
-          <span class="ptz-info-val">Indoor Lounge Area</span>
-        </div>
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Target URL:</span>
-          <span class="ptz-info-val font-mono">http://100.65.136.42:8080/ptz.html</span>
-        </div>
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Fitur Kontrol:</span>
-          <span class="ptz-info-val">D-Pad 8-Arah &bull; Home &bull; Step (3&deg;, 5&deg;, 10&deg;)</span>
-        </div>
-      </div>
-
-      <div class="ptz-card-footer">
-        <a href="http://100.65.136.42:8080/ptz.html" target="_blank" rel="noopener noreferrer" class="btn btn-primary ptz-launch-btn">
-          <span>🎮 Buka Kontrol 5020 (Lounge)</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-        </a>
+      <div class="ptz-monitor-footer">
+        <span>⚡ H.264 WebRTC &bull; Intel VAAPI Hardware Transcode &bull; 640x480</span>
+        <span style="color: #38bdf8;">🔒 Seamless Dokploy Routing (Bebas Tailscale)</span>
       </div>
     </div>
 
-    <!-- Camera 2: 5020B (Port 9) -->
-    <div class="ptz-card ptz-card-highlight">
-      <div class="ptz-card-header">
-        <div class="ptz-card-title-group">
-          <span class="status-indicator online"></span>
-          <h3 class="ptz-card-name">5020B (Port 9)</h3>
-          <span class="ptz-ip-badge">192.168.50.51</span>
+    <!-- Right Column: PTZ Interactive Control Pad -->
+    <div class="ptz-control-panel-card">
+      <div class="ptz-control-header">
+        <div class="ptz-control-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+          Navigasi Pan &amp; Tilt
         </div>
-        <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">KAMERA BARU</span>
+        <span class="badge" id="ptzLatencyBadge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+          Standby
+        </span>
       </div>
 
-      <div class="ptz-card-preview">
-        <img src="/api/go2rtc/frame.jpeg?src=dcs_5020b" alt="Preview 5020B Port 9" class="ptz-preview-img" onerror="this.onerror=null; this.src='/placeholder-camera.svg';">
-        <div class="ptz-preview-overlay">
-          <span>Native 640x480 &bull; Switch Port 9 VLAN 50</span>
-        </div>
-      </div>
+      <div class="ptz-control-body">
+        <!-- 8-Way D-Pad -->
+        <div class="ptz-dpad-container">
+          <div class="ptz-dpad-grid">
+            <button type="button" class="ptz-dpad-btn" data-dir="left_up" title="Kiri-Atas (Left-Up)">↖</button>
+            <button type="button" class="ptz-dpad-btn" data-dir="up" title="Atas (Up)">⬆</button>
+            <button type="button" class="ptz-dpad-btn" data-dir="right_up" title="Kanan-Atas (Right-Up)">↗</button>
 
-      <div class="ptz-card-body">
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Lokasi:</span>
-          <span class="ptz-info-val">Area Port 9 (VLAN 50 CCTV)</span>
-        </div>
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Target URL:</span>
-          <span class="ptz-info-val font-mono">http://100.65.136.42:8080/ptz-b.html</span>
-        </div>
-        <div class="ptz-info-row">
-          <span class="ptz-info-label">Fitur Kontrol:</span>
-          <span class="ptz-info-val">D-Pad 8-Arah &bull; Home &bull; Step (3&deg;, 5&deg;, 10&deg;)</span>
-        </div>
-      </div>
+            <button type="button" class="ptz-dpad-btn" data-dir="left" title="Kiri (Left)">⬅</button>
+            <button type="button" class="ptz-dpad-btn ptz-home-btn" data-dir="home" title="Reset ke Posisi Tengah (Home)">🏠</button>
+            <button type="button" class="ptz-dpad-btn" data-dir="right" title="Kanan (Right)">➡</button>
 
-      <div class="ptz-card-footer">
-        <a href="http://100.65.136.42:8080/ptz-b.html" target="_blank" rel="noopener noreferrer" class="btn btn-accent ptz-launch-btn">
-          <span>🎮 Buka Kontrol 5020B (Port 9)</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-        </a>
+            <button type="button" class="ptz-dpad-btn" data-dir="left_down" title="Kiri-Bawah (Left-Down)">↙</button>
+            <button type="button" class="ptz-dpad-btn" data-dir="down" title="Bawah (Down)">⬇</button>
+            <button type="button" class="ptz-dpad-btn" data-dir="right_down" title="Kanan-Bawah (Right-Down)">↘</button>
+          </div>
+        </div>
+
+        <!-- Step Degree Selector -->
+        <div class="ptz-step-block">
+          <div class="ptz-block-label">
+            <span>Jarak Gerak (Step Degree)</span>
+            <span id="currentStepLabel" style="color: #38bdf8;">5°</span>
+          </div>
+          <div class="ptz-step-btn-group">
+            <button type="button" class="ptz-step-btn" data-step="3" onclick="setStep(3, this)">Halus (3°)</button>
+            <button type="button" class="ptz-step-btn active" data-step="5" onclick="setStep(5, this)">Normal (5°)</button>
+            <button type="button" class="ptz-step-btn" data-step="10" onclick="setStep(10, this)">Jauh (10°)</button>
+          </div>
+        </div>
+
+        <!-- Real-Time Status Notification Box -->
+        <div class="ptz-status-box" id="ptzStatusBox">
+          <span class="ptz-status-text" id="ptzStatusText">● Siap menerima navigasi</span>
+          <span class="ptz-status-latency" id="ptzStatusLatency">-- ms</span>
+        </div>
+
+        <!-- Keyboard Controls Guide -->
+        <div class="ptz-keyboard-guide">
+          <div style="font-weight: 600; color: #e2e8f0; margin-bottom: 4px;">💡 Panduan Kontrol Keyboard:</div>
+          <div>
+            <span class="ptz-key-tag">↑</span> <span class="ptz-key-tag">↓</span> <span class="ptz-key-tag">←</span> <span class="ptz-key-tag">→</span> : Gerak 4 arah<br>
+            <span class="ptz-key-tag">Numpad 1-9</span> : Navigasi 8-arah lengkap &bull; <span class="ptz-key-tag">Home</span> / <span class="ptz-key-tag">Space</span> : Posisi tengah<br>
+            <span class="ptz-key-tag">1</span>, <span class="ptz-key-tag">2</span>, <span class="ptz-key-tag">3</span> : Ubah jarak (3°, 5°, 10°)
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<script src="/js/webrtc.js"></script>
+<script>
+  let currentCam = '{{initialCam}}';
+  let currentStream = '{{initialStream}}';
+  let currentStep = 5;
+  let isMoving = false;
+  let activeStreamer = null;
+
+  // Initialize WebRTC Stream
+  function initStream(streamName) {
+    if (activeStreamer) {
+      activeStreamer.close();
+      activeStreamer = null;
+    }
+    const loader = document.getElementById('ptz-loader');
+    if (loader) loader.style.display = 'flex';
+
+    activeStreamer = new SkyStreamer('ptz-monitor-card', streamName, 'ptz-video', 'ptz-loader');
+    activeStreamer.connect();
+  }
+
+  // Camera Switcher
+  function switchCamera(camId, streamName, name, loc, ip) {
+    if (currentCam === camId) return;
+    currentCam = camId;
+    currentStream = streamName;
+
+    // Update Pills
+    document.querySelectorAll('#ptz-camera-selector .cam-radio-pill').forEach(pill => {
+      pill.classList.toggle('active', pill.dataset.cam === camId);
+    });
+
+    // Update Header Info
+    document.getElementById('ptz-cam-title').textContent = name;
+    document.getElementById('ptz-cam-sub').textContent = `${loc} • ${ip}`;
+
+    // Switch Stream
+    initStream(streamName);
+
+    // Update Status
+    const statusText = document.getElementById('ptzStatusText');
+    statusText.textContent = `● Beralih ke kamera ${name}`;
+    statusText.style.color = '#38bdf8';
+
+    // Update URL without page reload
+    if (window.history && window.history.pushState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('cam', camId);
+      window.history.pushState({ cam: camId }, '', url.toString());
+    }
+  }
+
+  // Set Step Degree
+  function setStep(val, btnEl) {
+    currentStep = val;
+    document.querySelectorAll('.ptz-step-btn').forEach(btn => btn.classList.remove('active'));
+    if (btnEl) {
+      btnEl.classList.add('active');
+    } else {
+      const target = document.querySelector(`.ptz-step-btn[data-step="${val}"]`);
+      if (target) target.classList.add('active');
+    }
+    document.getElementById('currentStepLabel').textContent = `${val}°`;
+  }
+
+  // Send PTZ Movement Command to Backend Proxy (Zero Tailscale required!)
+  async function sendPTZ(direction) {
+    if (isMoving) return;
+    isMoving = true;
+
+    const statusText = document.getElementById('ptzStatusText');
+    const latencyBadge = document.getElementById('ptzLatencyBadge');
+    const latencySpan = document.getElementById('ptzStatusLatency');
+    const dirUpper = direction.replace('_', '-').toUpperCase();
+
+    statusText.textContent = `🚀 Menggerakkan: ${dirUpper} (${currentStep}°)...`;
+    statusText.style.color = '#f59e0b';
+    latencyBadge.textContent = 'Moving...';
+    latencyBadge.style.color = '#f59e0b';
+
+    // Visual button press animation
+    const btn = document.querySelector(`.ptz-dpad-btn[data-dir="${direction}"]`);
+    if (btn) btn.classList.add('active-press');
+
+    const startTime = performance.now();
+
+    try {
+      const res = await fetch(`/api/ptz/control?cam=${encodeURIComponent(currentCam)}&dir=${encodeURIComponent(direction)}&step=${currentStep}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await res.json();
+      const elapsed = Math.round(performance.now() - startTime);
+
+      if (res.ok && data.success) {
+        statusText.textContent = `✓ Berhasil: ${dirUpper} (${currentStep}°)`;
+        statusText.style.color = '#22c55e';
+        const netLatency = data.latency || elapsed;
+        latencyBadge.textContent = `${netLatency}ms`;
+        latencyBadge.style.color = '#22c55e';
+        latencySpan.textContent = `${netLatency}ms`;
+      } else {
+        throw new Error(data.error || 'Server error');
+      }
+    } catch (err) {
+      console.error('PTZ Error:', err);
+      statusText.textContent = `⚠️ Gagal: ${err.message}`;
+      statusText.style.color = '#ef4444';
+      latencyBadge.textContent = 'Error';
+      latencyBadge.style.color = '#ef4444';
+      latencySpan.textContent = 'Err';
+    } finally {
+      if (btn) {
+        setTimeout(() => btn.classList.remove('active-press'), 150);
+      }
+      setTimeout(() => {
+        isMoving = false;
+        if (statusText.textContent.startsWith('✓')) {
+          statusText.style.color = '#94a3b8';
+          statusText.textContent = `● Siap menerima navigasi (${currentCam.toUpperCase()})`;
+        }
+      }, 800);
+    }
+  }
+
+  // Fullscreen video toggle
+  function togglePtzFullscreen() {
+    const viewport = document.getElementById('ptz-viewport');
+    if (!viewport) return;
+    if (!document.fullscreenElement) {
+      viewport.requestFullscreen().catch(err => {
+        console.warn('Fullscreen error:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  // Event Listeners on DOM Ready
+  document.addEventListener('DOMContentLoaded', () => {
+    // Start initial stream
+    initStream(currentStream);
+
+    // Pill Selector Click Handlers
+    document.querySelectorAll('#ptz-camera-selector .cam-radio-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        switchCamera(
+          pill.dataset.cam,
+          pill.dataset.stream,
+          pill.dataset.name,
+          pill.dataset.loc,
+          pill.dataset.ip
+        );
+      });
+    });
+
+    // D-Pad Button Click Handlers
+    document.querySelectorAll('.ptz-dpad-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = btn.dataset.dir;
+        if (dir) sendPTZ(dir);
+      });
+    });
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+      let dir = null;
+      switch (e.key) {
+        case 'ArrowUp':
+        case '8':
+          dir = 'up'; break;
+        case 'ArrowDown':
+        case '2':
+          dir = 'down'; break;
+        case 'ArrowLeft':
+        case '4':
+          dir = 'left'; break;
+        case 'ArrowRight':
+        case '6':
+          dir = 'right'; break;
+        case '7':
+          dir = 'left_up'; break;
+        case '9':
+          dir = 'right_up'; break;
+        case '1':
+          if (e.code === 'Numpad1') dir = 'left_down';
+          else setStep(3);
+          break;
+        case '3':
+          if (e.code === 'Numpad3') dir = 'right_down';
+          else setStep(10);
+          break;
+        case '5':
+          if (e.code === 'Numpad5') dir = 'home';
+          break;
+        case '2':
+          if (e.code !== 'Numpad2') setStep(5);
+          break;
+        case 'Home':
+        case ' ':
+          dir = 'home'; break;
+      }
+
+      if (dir) {
+        e.preventDefault();
+        sendPTZ(dir);
+      }
+    });
+  });
+</script>

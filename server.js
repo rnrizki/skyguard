@@ -15,6 +15,7 @@ const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'SkyGuard2026!';
 const GO2RTC_URL = process.env.GO2RTC_URL || 'http://localhost:1984';
 const FRIGATE_URL = process.env.FRIGATE_URL || 'http://100.65.136.42:5000';
+const OPENWRT_HOST = process.env.OPENWRT_HOST || '100.65.136.42';
 
 // S3 Storage Credentials
 const S3_ENDPOINT = process.env.S3_ENDPOINT || 'https://s3api1.skyconnection.id';
@@ -271,8 +272,8 @@ const CAMERAS = [
   { id: 'camera_06', name: 'Camera 06', stream: 'camera_06', location: 'Ruang Kerja 2' },
   { id: 'camera_07', name: 'Camera 07', stream: 'camera_07', location: 'Area Belakang' },
   { id: 'camera_08', name: 'Camera 08', stream: 'camera_08', location: 'Server / NOC Room' },
-  { id: 'dcs_5020l', name: 'D-Link DCS-5020L', stream: 'dcs_5020l', location: 'Indoor Lounge' },
-  { id: 'dcs_5020b', name: '5020B', stream: 'dcs_5020b', location: 'Area 5020B' }
+  { id: 'dcs_5020l', name: '5020 (Lounge)', stream: 'dcs_5020l', location: 'Indoor Lounge Area', ip: '192.168.50.50' },
+  { id: 'dcs_5020b', name: '5020B (Port 9)', stream: 'dcs_5020b', location: 'Port 9 (VLAN 50 CCTV)', ip: '192.168.50.51' }
 ];
 
 // --- AUTH ROUTES ---
@@ -330,11 +331,74 @@ app.get(['/timeline', '/history'], requireAuth, (req, res) => {
 });
 
 app.get('/ptz', requireAuth, (req, res) => {
+  const selectedCam = (req.query.cam || '5020').toLowerCase();
+  const isB = selectedCam.includes('b');
   res.render('ptz', {
     title: 'PTZ Camera Control | SkyGuard',
     activeTab: 'ptz',
-    cameras: CAMERAS.filter(c => c.id.startsWith('dcs_5020'))
+    initialCam: isB ? '5020b' : '5020',
+    initialStream: isB ? 'dcs_5020b' : 'dcs_5020l',
+    cameras: [
+      { id: '5020', stream: 'dcs_5020l', name: '5020 (Lounge)', location: 'Indoor Lounge Area', ip: '192.168.50.50', badgeColor: 'green' },
+      { id: '5020b', stream: 'dcs_5020b', name: '5020B (Port 9)', location: 'Port 9 (VLAN 50 CCTV)', ip: '192.168.50.51', badgeColor: 'blue' }
+    ]
   });
+});
+
+// --- API: PTZ CONTROL PROXY (Zero-Tailscale Client Routing) ---
+app.all('/api/ptz/control', requireAuth, async (req, res) => {
+  try {
+    const rawCam = (req.query.cam || req.body?.cam || '5020').toString().toLowerCase();
+    const script = (rawCam.includes('b') || rawCam === 'dcs_5020b') ? 'ptz-b' : 'ptz';
+    
+    let dir = (req.query.dir || req.body?.dir || 'home').toString().toLowerCase();
+    const dirMap = {
+      'upleft': 'left_up',
+      'upright': 'right_up',
+      'downleft': 'left_down',
+      'downright': 'right_down',
+      'center': 'home'
+    };
+    if (dirMap[dir]) {
+      dir = dirMap[dir];
+    }
+
+    const validDirs = ['left_up', 'up', 'right_up', 'left', 'home', 'right', 'left_down', 'down', 'right_down'];
+    if (!validDirs.includes(dir)) {
+      dir = 'home';
+    }
+    
+    let step = parseInt(req.query.step || req.body?.step || '5', 10);
+    if (![3, 5, 10].includes(step)) step = 5;
+
+    const targetUrl = `http://${OPENWRT_HOST}/cgi-bin/${script}?dir=${encodeURIComponent(dir)}&step=${step}`;
+    const startTime = Date.now();
+    const response = await globalThis.fetch(targetUrl, { signal: AbortSignal.timeout(3500) });
+    const latency = Date.now() - startTime;
+
+    if (!response.ok) {
+      return res.status(502).json({
+        success: false,
+        error: `OpenWrt gateway returned HTTP ${response.status}`,
+        target: script
+      });
+    }
+
+    const data = await response.json().catch(() => ({ status: 'ok' }));
+    return res.json({
+      success: true,
+      latency,
+      camera: script === 'ptz-b' ? '5020B (Port 9)' : '5020 (Lounge)',
+      ...data
+    });
+  } catch (err) {
+    console.error('PTZ proxy execution error:', err.message);
+    return res.status(502).json({
+      success: false,
+      error: 'Gagal berkomunikasi dengan gateway PTZ OpenWrt',
+      details: err.message
+    });
+  }
 });
 
 // --- API: GO2RTC PROXY ---

@@ -3144,162 +3144,313 @@ body {
   font-family: monospace;
 }
 
-/* PTZ Page Layout */
-.ptz-page {
-  max-width: 1200px;
+/* ==========================================================================
+   PTZ CAMERA CONTROLLER WORKSTATION (Direct No-Tailscale Routing)
+   ========================================================================== */
+.ptz-page-container {
+  max-width: 1280px;
   margin: 0 auto;
+  padding: 0 0.5rem;
 }
 
-.ptz-cards-grid {
+.ptz-workspace-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1.5rem;
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
 }
 
-.ptz-card {
+@media (min-width: 992px) {
+  .ptz-workspace-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(360px, 1fr);
+    align-items: start;
+  }
+}
+
+/* Video Monitor Card */
+.ptz-monitor-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 14px;
   overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
-  transition: all 0.25s ease;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
-.ptz-card:hover {
-  border-color: #38bdf8;
-  transform: translateY(-3px);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-}
-
-.ptz-card-highlight {
-  border-color: rgba(56, 189, 248, 0.4);
-}
-
-.ptz-card-header {
+.ptz-monitor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
-  background: rgba(15, 23, 42, 0.6);
+  padding: 0.9rem 1.25rem;
+  background: rgba(15, 23, 42, 0.7);
   border-bottom: 1px solid var(--border-color);
 }
 
-.ptz-card-title-group {
+.ptz-cam-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ptz-cam-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.ptz-card-name {
+.ptz-cam-title {
   font-size: 1.1rem;
   font-weight: 700;
   color: #f8fafc;
   margin: 0;
 }
 
-.ptz-ip-badge {
-  font-size: 0.75rem;
-  font-family: monospace;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 4px;
+.ptz-cam-sub {
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 
-.ptz-card-preview {
+.ptz-video-viewport {
   position: relative;
   width: 100%;
-  aspect-ratio: 16/9;
-  background: #000;
+  aspect-ratio: 4 / 3;
+  background: #000000;
   overflow: hidden;
-}
-
-.ptz-preview-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.ptz-card:hover .ptz-preview-img {
-  transform: scale(1.03);
-}
-
-.ptz-preview-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 6px 12px;
-  background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
-  font-size: 0.72rem;
-  color: #cbd5e1;
-}
-
-.ptz-card-body {
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  flex-grow: 1;
-}
-
-.ptz-info-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.ptz-info-label {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.ptz-info-val {
-  color: #f1f5f9;
-  font-weight: 600;
-}
-
-.font-mono {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.8rem;
-  color: #38bdf8;
-}
-
-.ptz-card-footer {
-  padding: 1rem 1.25rem;
-  background: rgba(15, 23, 42, 0.4);
-  border-top: 1px solid var(--border-color);
-}
-
-.ptz-launch-btn {
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.ptz-video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.ptz-monitor-footer {
+  padding: 0.75rem 1.25rem;
+  background: rgba(15, 23, 42, 0.5);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0.75rem 1rem;
-  font-size: 0.92rem;
-  font-weight: 600;
-  border-radius: 8px;
-  text-decoration: none;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
-.btn-accent {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
+/* PTZ Control Panel Card */
+.ptz-control-panel-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+
+.ptz-control-header {
+  padding: 0.9rem 1.25rem;
+  background: rgba(15, 23, 42, 0.7);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ptz-control-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ptz-control-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+/* 8-Way D-Pad */
+.ptz-dpad-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 0.25rem 0;
+}
+
+.ptz-dpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 76px);
+  grid-template-rows: repeat(3, 76px);
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .ptz-dpad-grid {
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(3, 64px);
+    gap: 8px;
+  }
+}
+
+.ptz-dpad-btn {
+  background: #1e293b;
+  border: 2px solid #334155;
+  color: #f8fafc;
+  border-radius: 12px;
+  font-size: 26px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.ptz-dpad-btn:hover {
+  background: #334155;
+  border-color: #38bdf8;
   color: #ffffff;
-  border: 1px solid #38bdf8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(56, 189, 248, 0.25);
 }
 
-.btn-accent:hover {
-  background: linear-gradient(135deg, #0369a1, #075985);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.4);
+.ptz-dpad-btn:active, .ptz-dpad-btn.active-press {
+  background: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+  transform: translateY(1px) scale(0.95);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.6) !important;
+}
+
+.ptz-home-btn {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  font-size: 24px;
+}
+
+.ptz-home-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+/* Step Size Selector */
+.ptz-step-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ptz-block-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ptz-step-btn-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.ptz-step-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.ptz-step-btn:hover {
+  border-color: #64748b;
+  color: #ffffff;
+}
+
+.ptz-step-btn.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.4);
+}
+
+/* Live Status Box */
+.ptz-status-box {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+
+.ptz-status-text {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ptz-status-latency {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Keyboard Guide */
+.ptz-keyboard-guide {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.ptz-key-tag {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: #f1f5f9;
 }
 
 
