@@ -271,7 +271,8 @@ const CAMERAS = [
   { id: 'camera_06', name: 'Camera 06', stream: 'camera_06', location: 'Ruang Kerja 2' },
   { id: 'camera_07', name: 'Camera 07', stream: 'camera_07', location: 'Area Belakang' },
   { id: 'camera_08', name: 'Camera 08', stream: 'camera_08', location: 'Server / NOC Room' },
-  { id: 'dcs_5020l', name: 'D-Link DCS-5020L', stream: 'dcs_5020l', location: 'Indoor Lounge' }
+  { id: 'dcs_5020l', name: 'D-Link DCS-5020L', stream: 'dcs_5020l', location: 'Indoor Lounge' },
+  { id: 'dcs_5020b', name: '5020B', stream: 'dcs_5020b', location: 'Area 5020B' }
 ];
 
 // --- AUTH ROUTES ---

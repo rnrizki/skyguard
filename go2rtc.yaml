@@ -29,9 +29,11 @@ streams:
   camera_08:
     - rtsp://100.65.136.42:8554/camera_08
 
-  # D-Link Camera
+  # D-Link Cameras
   dcs_5020l:
     - rtsp://100.65.136.42:8554/dcs_5020l
+  dcs_5020b:
+    - rtsp://100.65.136.42:8554/dcs_5020b
 
 log:
   level: info
