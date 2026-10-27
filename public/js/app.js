@@ -4,7 +4,7 @@
 
 /**
  * SkyGuard Live Monitoring Hub - Application Logic
- * Supports intelligent dual-stream switching: Sub-Stream (25 FPS smooth grid) & Main-Stream (HD)
+ * Supports intelligent dual-stream switching: Sub-Stream (15 FPS smooth grid) & Main-Stream (HD)
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const livePills = document.querySelectorAll('#live-camera-selector .cam-radio-pill');
   const pillAll = document.querySelector('#live-camera-selector [data-cam="all"]');
 
-  // Quality Mode: 'smooth' (Sub-Stream 25 FPS) vs 'hd' (Main-Stream High Res)
+  // Quality Mode: 'smooth' (Sub-Stream 15 FPS) vs 'hd' (Main-Stream High Res)
   let currentQualityMode = localStorage.getItem('skyguard_stream_quality') || 'smooth';
 
   function getStreamNameForCard(card, isSingleFocused) {
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const badge = card.querySelector('.stream-tech-badge');
       if (badge) {
-        badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+        badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
       }
 
       if (streamer && streamer.streamName !== desiredStream) {
@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const badge = card.querySelector('.stream-tech-badge');
     if (badge) {
-      badge.textContent = streamName.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+      badge.textContent = streamName.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
     }
 
     if (streamName && document.getElementById(videoId)) {
@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const badge = card.querySelector('.stream-tech-badge');
         if (badge) {
-          badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+          badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
         }
 
         if (streamer && streamer.streamName !== desiredStream) {
