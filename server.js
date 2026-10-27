@@ -330,11 +330,40 @@ app.get(['/timeline', '/history'], requireAuth, (req, res) => {
 });
 
 // --- API: GO2RTC PROXY ---
+async function ensureGo2rtcStreams() {
+  try {
+    for (const cam of CAMERAS) {
+      const src = `rtsp://100.65.136.42:8554/${cam.stream}`;
+      await globalThis.fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.stream)}&src=${encodeURIComponent(src)}`, {
+        method: 'PUT'
+      });
+    }
+    console.log('✓ go2rtc streams verified/registered for all CAMERAS');
+  } catch (err) {
+    console.warn('Could not auto-register go2rtc streams:', err.message);
+  }
+}
+
 app.get('/api/go2rtc/streams', requireAuth, async (req, res) => {
   try {
     const fetch = globalThis.fetch;
-    const response = await fetch(`${GO2RTC_URL}/api/streams`);
-    const data = await response.json();
+    let response = await fetch(`${GO2RTC_URL}/api/streams`);
+    let data = await response.json();
+
+    let missing = false;
+    for (const cam of CAMERAS) {
+      if (!data[cam.stream]) {
+        missing = true;
+        await fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.stream)}&src=${encodeURIComponent(`rtsp://100.65.136.42:8554/${cam.stream}`)}`, {
+          method: 'PUT'
+        });
+      }
+    }
+    if (missing) {
+      response = await fetch(`${GO2RTC_URL}/api/streams`);
+      data = await response.json();
+    }
+
     res.json(data);
   } catch (err) {
     res.json({ error: 'Could not connect to go2rtc relay', details: err.message });
@@ -2299,4 +2328,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  S3 Endpoint: ${S3_ENDPOINT} (Bucket: ${S3_BUCKET})`);
   console.log(`  go2rtc Relay: ${GO2RTC_URL}`);
   console.log(`=======================================================`);
+  ensureGo2rtcStreams();
 });
