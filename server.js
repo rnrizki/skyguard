@@ -265,16 +265,16 @@ function finalizeSession(s) {
 
 // Cameras Definition
 const CAMERAS = [
-  { id: 'teras_depan', name: 'Teras Depan', stream: 'teras_depan', location: 'Outdoor Depan' },
-  { id: 'camera_02', name: 'Camera 02', stream: 'camera_02', location: 'Area Kantor' },
-  { id: 'camera_03', name: 'Camera 03', stream: 'camera_03', location: 'Lobi & Koridor' },
-  { id: 'camera_04', name: 'Camera 04', stream: 'camera_04', location: 'Ruang Rapat' },
-  { id: 'camera_05', name: 'Camera 05', stream: 'camera_05', location: 'Ruang Kerja 1' },
-  { id: 'camera_06', name: 'Camera 06', stream: 'camera_06', location: 'Ruang Kerja 2' },
-  { id: 'camera_07', name: 'Camera 07', stream: 'camera_07', location: 'Area Belakang' },
-  { id: 'camera_08', name: 'Camera 08', stream: 'camera_08', location: 'Server / NOC Room' },
-  { id: 'dcs_5020l', name: '5020 (Lounge)', stream: 'dcs_5020l', location: 'Indoor Lounge Area', ip: '192.168.50.50' },
-  { id: 'dcs_5020b', name: '5020B (Port 9)', stream: 'dcs_5020b', location: 'Port 9 (VLAN 50 CCTV)', ip: '192.168.50.51' }
+  { id: 'teras_depan', name: 'Teras Depan', stream: 'teras_depan', streamSub: 'teras_depan_sub', location: 'Outdoor Depan' },
+  { id: 'camera_02', name: 'Camera 02', stream: 'camera_02', streamSub: 'camera_02_sub', location: 'Area Kantor' },
+  { id: 'camera_03', name: 'Camera 03', stream: 'camera_03', streamSub: 'camera_03_sub', location: 'Lobi & Koridor' },
+  { id: 'camera_04', name: 'Camera 04', stream: 'camera_04', streamSub: 'camera_04_sub', location: 'Ruang Rapat' },
+  { id: 'camera_05', name: 'Camera 05', stream: 'camera_05', streamSub: 'camera_05_sub', location: 'Ruang Kerja 1' },
+  { id: 'camera_06', name: 'Camera 06', stream: 'camera_06', streamSub: 'camera_06_sub', location: 'Ruang Kerja 2' },
+  { id: 'camera_07', name: 'Camera 07', stream: 'camera_07', streamSub: 'camera_07_sub', location: 'Area Belakang' },
+  { id: 'camera_08', name: 'Camera 08', stream: 'camera_08', streamSub: 'camera_08_sub', location: 'Server / NOC Room' },
+  { id: 'dcs_5020l', name: '5020 (Lounge)', stream: 'dcs_5020l', streamSub: 'dcs_5020l', location: 'Indoor Lounge Area', ip: '192.168.50.50' },
+  { id: 'dcs_5020b', name: '5020B (Port 9)', stream: 'dcs_5020b', streamSub: 'dcs_5020b', location: 'Port 9 (VLAN 50 CCTV)', ip: '192.168.50.51' }
 ];
 
 // --- AUTH ROUTES ---
@@ -454,10 +454,16 @@ app.all('/api/ptz/control', requireAuth, async (req, res) => {
 async function ensureGo2rtcStreams() {
   try {
     for (const cam of CAMERAS) {
-      const src = `rtsp://100.65.136.42:8554/${cam.stream}`;
+      const src = `rtsp://${OPENWRT_HOST}:8554/${cam.stream}`;
       await globalThis.fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.stream)}&src=${encodeURIComponent(src)}`, {
         method: 'PUT'
       });
+      if (cam.streamSub && cam.streamSub !== cam.stream) {
+        const subSrc = `rtsp://${OPENWRT_HOST}:8554/${cam.streamSub}`;
+        await globalThis.fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.streamSub)}&src=${encodeURIComponent(subSrc)}`, {
+          method: 'PUT'
+        });
+      }
     }
     console.log('✓ go2rtc streams verified/registered for all CAMERAS');
   } catch (err) {
@@ -475,7 +481,13 @@ app.get('/api/go2rtc/streams', requireAuth, async (req, res) => {
     for (const cam of CAMERAS) {
       if (!data[cam.stream]) {
         missing = true;
-        await fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.stream)}&src=${encodeURIComponent(`rtsp://100.65.136.42:8554/${cam.stream}`)}`, {
+        await fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.stream)}&src=${encodeURIComponent(`rtsp://${OPENWRT_HOST}:8554/${cam.stream}`)}`, {
+          method: 'PUT'
+        });
+      }
+      if (cam.streamSub && cam.streamSub !== cam.stream && !data[cam.streamSub]) {
+        missing = true;
+        await fetch(`${GO2RTC_URL}/api/streams?name=${encodeURIComponent(cam.streamSub)}&src=${encodeURIComponent(`rtsp://${OPENWRT_HOST}:8554/${cam.streamSub}`)}`, {
           method: 'PUT'
         });
       }

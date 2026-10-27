@@ -3453,4 +3453,41 @@ body {
   color: #f1f5f9;
 }
 
+/* Stream Quality Selector Pills */
+.stream-quality-pills {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.quality-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quality-btn:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.quality-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.4);
+}
+
 

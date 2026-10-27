@@ -29,6 +29,24 @@ streams:
   camera_08:
     - rtsp://100.65.136.42:8554/camera_08
 
+  # Hikvision Cameras (Sub Stream Low Bitrate 25fps - Smooth Multi-View Grid)
+  teras_depan_sub:
+    - rtsp://100.65.136.42:8554/teras_depan_sub
+  camera_02_sub:
+    - rtsp://100.65.136.42:8554/camera_02_sub
+  camera_03_sub:
+    - rtsp://100.65.136.42:8554/camera_03_sub
+  camera_04_sub:
+    - rtsp://100.65.136.42:8554/camera_04_sub
+  camera_05_sub:
+    - rtsp://100.65.136.42:8554/camera_05_sub
+  camera_06_sub:
+    - rtsp://100.65.136.42:8554/camera_06_sub
+  camera_07_sub:
+    - rtsp://100.65.136.42:8554/camera_07_sub
+  camera_08_sub:
+    - rtsp://100.65.136.42:8554/camera_08_sub
+
   # D-Link Cameras
   dcs_5020l:
     - rtsp://100.65.136.42:8554/dcs_5020l

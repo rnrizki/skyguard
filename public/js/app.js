@@ -2,18 +2,87 @@
  * SkyGuard Live Monitoring Hub - Application Logic
  */
 
+/**
+ * SkyGuard Live Monitoring Hub - Application Logic
+ * Supports intelligent dual-stream switching: Sub-Stream (25 FPS smooth grid) & Main-Stream (HD)
+ */
+
 document.addEventListener('DOMContentLoaded', () => {
   const cameraGrid = document.getElementById('camera-grid');
   const cards = document.querySelectorAll('.camera-card');
-  const gridButtons = document.querySelectorAll('.grid-btn');
   const reconnectAllBtn = document.getElementById('btn-reconnect-all');
+  const livePills = document.querySelectorAll('#live-camera-selector .cam-radio-pill');
+  const pillAll = document.querySelector('#live-camera-selector [data-cam="all"]');
+
+  // Quality Mode: 'smooth' (Sub-Stream 25 FPS) vs 'hd' (Main-Stream High Res)
+  let currentQualityMode = localStorage.getItem('skyguard_stream_quality') || 'smooth';
+
+  function getStreamNameForCard(card, isSingleFocused) {
+    if (isSingleFocused || currentQualityMode === 'hd') {
+      return card.dataset.stream;
+    }
+    return card.dataset.streamSub || card.dataset.stream;
+  }
+
+  function applyQualityMode(mode) {
+    currentQualityMode = mode;
+    localStorage.setItem('skyguard_stream_quality', mode);
+
+    const btnSmooth = document.getElementById('btn-quality-smooth');
+    const btnHd = document.getElementById('btn-quality-hd');
+    if (btnSmooth && btnHd) {
+      btnSmooth.classList.toggle('active', mode === 'smooth');
+      btnHd.classList.toggle('active', mode === 'hd');
+    }
+
+    const isAllActive = pillAll && pillAll.classList.contains('active');
+    const activeCamIds = [];
+    livePills.forEach(p => {
+      if (p !== pillAll && p.classList.contains('active')) activeCamIds.push(p.dataset.cam);
+    });
+    const isSingle = !isAllActive && activeCamIds.length === 1;
+
+    cards.forEach(card => {
+      const id = card.id.replace('card-', '');
+      const desiredStream = getStreamNameForCard(card, isSingle);
+      const streamer = window.skyStreamers[id];
+
+      const badge = card.querySelector('.stream-tech-badge');
+      if (badge) {
+        badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+      }
+
+      if (streamer && streamer.streamName !== desiredStream) {
+        streamer.close();
+        streamer.streamName = desiredStream;
+        streamer.isClosed = false;
+        streamer.connect();
+      }
+    });
+  }
+
+  const btnSmooth = document.getElementById('btn-quality-smooth');
+  const btnHd = document.getElementById('btn-quality-hd');
+  if (btnSmooth) btnSmooth.addEventListener('click', () => applyQualityMode('smooth'));
+  if (btnHd) btnHd.addEventListener('click', () => applyQualityMode('hd'));
+
+  // Sync initial button states
+  if (btnSmooth && btnHd) {
+    btnSmooth.classList.toggle('active', currentQualityMode === 'smooth');
+    btnHd.classList.toggle('active', currentQualityMode === 'hd');
+  }
 
   // Initialize streamers for each camera card
   cards.forEach(card => {
     const id = card.id.replace('card-', '');
-    const streamName = card.dataset.stream;
+    const streamName = getStreamNameForCard(card, false);
     const videoId = `video-${id}`;
     const loaderId = `loader-${id}`;
+
+    const badge = card.querySelector('.stream-tech-badge');
+    if (badge) {
+      badge.textContent = streamName.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+    }
 
     if (streamName && document.getElementById(videoId)) {
       const streamer = new SkyStreamer(card.id, streamName, videoId, loaderId);
@@ -26,10 +95,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateLiveClocks, 1000);
   updateLiveClocks();
 
-  // Multi-Select Camera Radio/Pill Selector
-  const livePills = document.querySelectorAll('#live-camera-selector .cam-radio-pill');
-  const pillAll = document.querySelector('#live-camera-selector [data-cam="all"]');
-
   function updateLiveCameraVisibility() {
     const isAllActive = pillAll && pillAll.classList.contains('active');
     const activeCamIds = [];
@@ -40,12 +105,29 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    const isSingle = !isAllActive && activeCamIds.length === 1;
+
     cards.forEach(card => {
       const camId = card.dataset.camId || card.id.replace('card-', '');
-      if (isAllActive || activeCamIds.length === 0) {
-        card.style.display = 'flex';
-      } else {
-        card.style.display = activeCamIds.includes(camId) ? 'flex' : 'none';
+      const isVisible = (isAllActive || activeCamIds.length === 0 || activeCamIds.includes(camId));
+      card.style.display = isVisible ? 'flex' : 'none';
+
+      if (isVisible) {
+        const id = card.id.replace('card-', '');
+        const desiredStream = getStreamNameForCard(card, isSingle);
+        const streamer = window.skyStreamers[id];
+
+        const badge = card.querySelector('.stream-tech-badge');
+        if (badge) {
+          badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (25 FPS)' : 'WebRTC • Main Stream (HD)';
+        }
+
+        if (streamer && streamer.streamName !== desiredStream) {
+          streamer.close();
+          streamer.streamName = desiredStream;
+          streamer.isClosed = false;
+          streamer.connect();
+        }
       }
     });
 
