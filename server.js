@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const { engine } = require('express-handlebars');
 const cookieParser = require('cookie-parser');
 const path = require('path');
@@ -345,8 +346,58 @@ app.get('/ptz', requireAuth, (req, res) => {
   });
 });
 
+// Persistent HTTP Agent for low-latency PTZ over Tailscale
+const ptzHttpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 60000,
+  maxSockets: 10,
+  timeout: 10000
+});
+
+function requestOpenWrtPTZ(script, dir, step) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: OPENWRT_HOST,
+      port: 80,
+      path: `/cgi-bin/${script}?dir=${encodeURIComponent(dir)}&step=${step}`,
+      method: 'GET',
+      agent: ptzHttpAgent,
+      timeout: 10000,
+      headers: {
+        'Connection': 'keep-alive',
+        'User-Agent': 'SkyGuard-PTZ-Proxy/2.0'
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve({ status: 'ok' });
+          }
+        } else {
+          reject(new Error(`OpenWrt gateway returned HTTP ${res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Gateway timeout (10s)'));
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    req.end();
+  });
+}
+
 // --- API: PTZ CONTROL PROXY (Zero-Tailscale Client Routing) ---
 app.all('/api/ptz/control', requireAuth, async (req, res) => {
+  const startTime = Date.now();
   try {
     const rawCam = (req.query.cam || req.body?.cam || '5020').toString().toLowerCase();
     const script = (rawCam.includes('b') || rawCam === 'dcs_5020b') ? 'ptz-b' : 'ptz';
@@ -371,20 +422,16 @@ app.all('/api/ptz/control', requireAuth, async (req, res) => {
     let step = parseInt(req.query.step || req.body?.step || '5', 10);
     if (![3, 5, 10].includes(step)) step = 5;
 
-    const targetUrl = `http://${OPENWRT_HOST}/cgi-bin/${script}?dir=${encodeURIComponent(dir)}&step=${step}`;
-    const startTime = Date.now();
-    const response = await globalThis.fetch(targetUrl, { signal: AbortSignal.timeout(3500) });
-    const latency = Date.now() - startTime;
-
-    if (!response.ok) {
-      return res.status(502).json({
-        success: false,
-        error: `OpenWrt gateway returned HTTP ${response.status}`,
-        target: script
-      });
+    // Execute with automatic 1-time retry if socket had an idle reset
+    let data;
+    try {
+      data = await requestOpenWrtPTZ(script, dir, step);
+    } catch (firstErr) {
+      console.warn(`PTZ request attempt 1 failed (${firstErr.message}), retrying...`);
+      data = await requestOpenWrtPTZ(script, dir, step);
     }
 
-    const data = await response.json().catch(() => ({ status: 'ok' }));
+    const latency = Date.now() - startTime;
     return res.json({
       success: true,
       latency,
@@ -392,11 +439,13 @@ app.all('/api/ptz/control', requireAuth, async (req, res) => {
       ...data
     });
   } catch (err) {
+    const latency = Date.now() - startTime;
     console.error('PTZ proxy execution error:', err.message);
     return res.status(502).json({
       success: false,
       error: 'Gagal berkomunikasi dengan gateway PTZ OpenWrt',
-      details: err.message
+      details: err.message,
+      latency
     });
   }
 });

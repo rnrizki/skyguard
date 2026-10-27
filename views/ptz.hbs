@@ -251,7 +251,7 @@
         latencyBadge.style.color = '#22c55e';
         latencySpan.textContent = `${netLatency}ms`;
       } else {
-        throw new Error(data.error || 'Server error');
+        throw new Error(data.details || data.error || 'Server error');
       }
     } catch (err) {
       console.error('PTZ Error:', err);
@@ -260,6 +260,12 @@
       latencyBadge.textContent = 'Error';
       latencyBadge.style.color = '#ef4444';
       latencySpan.textContent = 'Err';
+      setTimeout(() => {
+        statusText.style.color = '#94a3b8';
+        statusText.textContent = `● Siap menerima navigasi (${currentCam.toUpperCase()})`;
+        latencyBadge.textContent = 'Standby';
+        latencyBadge.style.color = '#38bdf8';
+      }, 3000);
     } finally {
       if (btn) {
         setTimeout(() => btn.classList.remove('active-press'), 150);
@@ -270,7 +276,7 @@
           statusText.style.color = '#94a3b8';
           statusText.textContent = `● Siap menerima navigasi (${currentCam.toUpperCase()})`;
         }
-      }, 800);
+      }, 300);
     }
   }
 
