@@ -59,12 +59,12 @@ services:
       - TS_USERSPACE=false
     command: >
       sh -c "
-        tailscaled --statedir=/var/lib/tailscale --tun=tailscale0 &
+        tailscaled --statedir=/var/lib/tailscale --tun=tailscale0 --port=41641 &
         sleep 2;
         if [ -n \"$$TS_AUTHKEY\" ]; then
-          tailscale up --authkey=\"$$TS_AUTHKEY\" --accept-routes --hostname=skyguard-dokploy;
+          tailscale up --authkey=\"$$TS_AUTHKEY\" --accept-routes --hostname=skyguard-dokploy --ssh;
         else
-          tailscale up --accept-routes --hostname=skyguard-dokploy --timeout=3600s;
+          tailscale up --accept-routes --hostname=skyguard-dokploy --ssh --timeout=3600s;
         fi
         wait
       "
