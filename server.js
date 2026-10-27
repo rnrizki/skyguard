@@ -1932,12 +1932,17 @@ app.post('/api/recordings/prune', async (req, res) => {
 
   try {
     let deletedCount = 0;
+    let deletedEventsCount = 0;
     if (before_time) {
       const result = await pool.query('DELETE FROM recordfrigate WHERE start_time <= $1;', [Number(before_time)]);
+      const evResult = await pool.query('DELETE FROM frigate_events WHERE start_time <= $1;', [Number(before_time)]);
       deletedCount = result.rowCount || 0;
+      deletedEventsCount = evResult.rowCount || 0;
     } else if (before_date) {
       const result = await pool.query('DELETE FROM recordfrigate WHERE date < $1;', [String(before_date)]);
+      const evResult = await pool.query('DELETE FROM frigate_events WHERE date < $1;', [String(before_date)]);
       deletedCount = result.rowCount || 0;
+      deletedEventsCount = evResult.rowCount || 0;
     } else if (Array.isArray(paths) && paths.length > 0) {
       const cleanPaths = paths.map(p => p.replace(/^\/media\/frigate\//, ''));
       const result = await pool.query('DELETE FROM recordfrigate WHERE path = ANY($1::text[]);', [cleanPaths]);
@@ -1946,8 +1951,8 @@ app.post('/api/recordings/prune', async (req, res) => {
       return res.status(400).json({ error: 'Missing before_time, before_date, or paths parameter' });
     }
 
-    console.log(`[PRUNE] Deleted ${deletedCount} records from ParadeDB to match OpenWrt 250GB quota.`);
-    res.json({ success: true, deleted_count: deletedCount });
+    console.log(`[PRUNE] Deleted ${deletedCount} recordings and ${deletedEventsCount} events from ParadeDB.`);
+    res.json({ success: true, deleted_count: deletedCount, deleted_events_count: deletedEventsCount });
   } catch (err) {
     console.error('Prune error:', err);
     res.status(500).json({ error: 'Database prune error', details: err.message });
