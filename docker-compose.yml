@@ -9,6 +9,8 @@ services:
         limits:
           cpus: '1.5'
           memory: 1024M
+    extra_hosts:
+      - "s3api1.skyconnection.id:100.117.163.10"
     environment:
       - PORT=3000
       - NODE_ENV=production
