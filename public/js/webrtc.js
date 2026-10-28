@@ -70,20 +70,36 @@ class SkyStreamer {
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete or timeout
+      // Wait for ICE gathering to complete or timeout (optimized fast-resolve)
       await new Promise(resolve => {
         if (this.pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (this.pc.iceGatheringState === 'complete') {
-              this.pc.removeEventListener('icegatheringstatechange', checkState);
-              resolve();
-            }
-          };
-          this.pc.addEventListener('icegatheringstatechange', checkState);
-          setTimeout(resolve, 1500); // 1.5s max gather time
+          return resolve();
         }
+        let resolved = false;
+        let candidateTimer = null;
+        const finish = () => {
+          if (!resolved) {
+            resolved = true;
+            if (candidateTimer) clearTimeout(candidateTimer);
+            this.pc.removeEventListener('icegatheringstatechange', checkState);
+            this.pc.removeEventListener('icecandidate', onCandidate);
+            resolve();
+          }
+        };
+        const checkState = () => {
+          if (this.pc.iceGatheringState === 'complete') {
+            finish();
+          }
+        };
+        const onCandidate = (e) => {
+          if (e.candidate && !candidateTimer) {
+            // Once initial candidate is found, give 250ms for additional candidate then send offer immediately
+            candidateTimer = setTimeout(finish, 250);
+          }
+        };
+        this.pc.addEventListener('icegatheringstatechange', checkState);
+        this.pc.addEventListener('icecandidate', onCandidate);
+        setTimeout(finish, 1000); // 1.0s max fallback
       });
 
       // Send SDP Offer to SkyGuard WebRTC Proxy
