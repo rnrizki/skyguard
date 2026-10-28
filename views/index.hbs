@@ -33,12 +33,12 @@
   <!-- Multi-Select Camera Radio/Pill Bar -->
   <div class="camera-pills-bar">
     <div class="camera-pill-selector" id="live-camera-selector">
-      <button type="button" class="cam-radio-pill active" data-cam="all">
+      <button type="button" class="cam-radio-pill" data-cam="all">
         <span class="pill-dot"></span>
         <span>Semua Kamera</span>
       </button>
       {{#each cameras}}
-      <button type="button" class="cam-radio-pill" data-cam="{{this.id}}">
+      <button type="button" class="cam-radio-pill {{#if (eq this.id 'teras_depan')}}active{{/if}}" data-cam="{{this.id}}">
         <span class="pill-dot"></span>
         <span>{{this.name}}</span>
       </button>
@@ -47,9 +47,9 @@
   </div>
 
   <!-- Camera Video Grid (Enforced 16:9 Ratio) -->
-  <div id="camera-grid" class="camera-grid grid-3x3">
+  <div id="camera-grid" class="camera-grid grid-1x1">
     {{#each cameras}}
-    <div class="camera-card" id="card-{{this.id}}" data-stream="{{this.stream}}" data-stream-sub="{{this.streamSub}}" data-cam-id="{{this.id}}">
+    <div class="camera-card" id="card-{{this.id}}" data-stream="{{this.stream}}" data-stream-sub="{{this.streamSub}}" data-cam-id="{{this.id}}" {{#unless (eq this.id 'teras_depan')}}style="display: none;"{{/unless}}>
       <!-- Camera Card Header Badge -->
       <div class="camera-header">
         <div class="camera-title-badge">

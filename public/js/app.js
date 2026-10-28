@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentQualityMode = localStorage.getItem('skyguard_stream_quality') || 'smooth';
 
   function getStreamNameForCard(card, isSingleFocused) {
-    if (isSingleFocused || currentQualityMode === 'hd') {
+    if (currentQualityMode === 'hd') {
       return card.dataset.stream;
     }
     return card.dataset.streamSub || card.dataset.stream;
@@ -43,20 +43,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const isSingle = !isAllActive && activeCamIds.length === 1;
 
     cards.forEach(card => {
-      const id = card.id.replace('card-', '');
-      const desiredStream = getStreamNameForCard(card, isSingle);
-      const streamer = window.skyStreamers[id];
+      if (card.style.display !== 'none') {
+        const id = card.id.replace('card-', '');
+        const desiredStream = getStreamNameForCard(card, isSingle);
+        const streamer = window.skyStreamers[id];
 
-      const badge = card.querySelector('.stream-tech-badge');
-      if (badge) {
-        badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
-      }
+        const badge = card.querySelector('.stream-tech-badge');
+        if (badge) {
+          badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
+        }
 
-      if (streamer && streamer.streamName !== desiredStream) {
-        streamer.close();
-        streamer.streamName = desiredStream;
-        streamer.isClosed = false;
-        streamer.connect();
+        if (streamer && streamer.streamName !== desiredStream) {
+          streamer.close();
+          streamer.streamName = desiredStream;
+          streamer.isClosed = false;
+          streamer.connect();
+        }
       }
     });
   }
@@ -71,25 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSmooth.classList.toggle('active', currentQualityMode === 'smooth');
     btnHd.classList.toggle('active', currentQualityMode === 'hd');
   }
-
-  // Initialize streamers for each camera card
-  cards.forEach(card => {
-    const id = card.id.replace('card-', '');
-    const streamName = getStreamNameForCard(card, false);
-    const videoId = `video-${id}`;
-    const loaderId = `loader-${id}`;
-
-    const badge = card.querySelector('.stream-tech-badge');
-    if (badge) {
-      badge.textContent = streamName.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
-    }
-
-    if (streamName && document.getElementById(videoId)) {
-      const streamer = new SkyStreamer(card.id, streamName, videoId, loaderId);
-      window.skyStreamers[id] = streamer;
-      streamer.connect();
-    }
-  });
 
   // Start live timestamp clock overlay for cameras
   setInterval(updateLiveClocks, 1000);
@@ -109,30 +92,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     cards.forEach(card => {
       const camId = card.dataset.camId || card.id.replace('card-', '');
-      const isVisible = (isAllActive || activeCamIds.length === 0 || activeCamIds.includes(camId));
+      const isVisible = (isAllActive || (activeCamIds.length === 0 ? camId === 'teras_depan' : activeCamIds.includes(camId)));
       card.style.display = isVisible ? 'flex' : 'none';
 
-      if (isVisible) {
-        const id = card.id.replace('card-', '');
-        const desiredStream = getStreamNameForCard(card, isSingle);
-        const streamer = window.skyStreamers[id];
+      const id = card.id.replace('card-', '');
+      let streamer = window.skyStreamers[id];
 
+      if (isVisible) {
+        const desiredStream = getStreamNameForCard(card, isSingle);
         const badge = card.querySelector('.stream-tech-badge');
         if (badge) {
           badge.textContent = desiredStream.endsWith('_sub') ? 'WebRTC • Sub Stream (15 FPS)' : 'WebRTC • Main Stream (HD)';
         }
 
-        if (streamer && streamer.streamName !== desiredStream) {
+        if (!streamer) {
+          const videoId = `video-${id}`;
+          const loaderId = `loader-${id}`;
+          if (document.getElementById(videoId)) {
+            streamer = new SkyStreamer(card.id, desiredStream, videoId, loaderId);
+            window.skyStreamers[id] = streamer;
+            streamer.connect();
+          }
+        } else if (streamer.streamName !== desiredStream || streamer.isClosed) {
           streamer.close();
           streamer.streamName = desiredStream;
           streamer.isClosed = false;
           streamer.connect();
         }
+      } else {
+        // Disconnect invisible streamer to save bandwidth & CPU!
+        if (streamer && !streamer.isClosed) {
+          streamer.close();
+        }
       }
     });
 
     // Auto-adjust grid layout based on number of visible cameras
-    const visibleCount = (isAllActive || activeCamIds.length === 0) ? cards.length : activeCamIds.length;
+    const visibleCount = isAllActive ? cards.length : (activeCamIds.length || 1);
     if (cameraGrid) {
       cameraGrid.classList.remove('grid-3x3', 'grid-2x2', 'grid-1x1');
       if (visibleCount === 1) {
@@ -145,8 +141,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Connect only the default/visible camera on initial page load (ultra-fast & light)
+  updateLiveCameraVisibility();
+
   livePills.forEach(pill => {
-    pill.addEventListener('click', () => {
+    pill.addEventListener('click', (e) => {
       const targetCam = pill.dataset.cam;
 
       if (targetCam === 'all') {
@@ -154,20 +153,21 @@ document.addEventListener('DOMContentLoaded', () => {
         livePills.forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
       } else {
-        // Specific camera clicked: Turn OFF 'all'
-        if (pillAll) pillAll.classList.remove('active');
-
-        // Toggle this camera
-        pill.classList.toggle('active');
-
-        // If no specific camera is active, automatically revert to 'all'
-        let anyActive = false;
-        livePills.forEach(p => {
-          if (p !== pillAll && p.classList.contains('active')) anyActive = true;
-        });
-
-        if (!anyActive && pillAll) {
-          pillAll.classList.add('active');
+        // If Ctrl/Cmd key is pressed, allow multi-select
+        if (e.ctrlKey || e.metaKey) {
+          if (pillAll) pillAll.classList.remove('active');
+          pill.classList.toggle('active');
+          let anyActive = false;
+          livePills.forEach(p => {
+            if (p !== pillAll && p.classList.contains('active')) anyActive = true;
+          });
+          if (!anyActive && pillAll) {
+            pillAll.classList.add('active');
+          }
+        } else {
+          // Clean single camera radio select (instant & light)
+          livePills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
         }
       }
 
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Reconnect all button handler
+  // Reconnect all button handler (only reconnects visible cameras)
   if (reconnectAllBtn) {
     reconnectAllBtn.addEventListener('click', () => {
       reconnectAllBtn.disabled = true;
@@ -186,8 +186,12 @@ document.addEventListener('DOMContentLoaded', () => {
         </svg> Reconnecting...
       `;
 
-      Object.values(window.skyStreamers).forEach(streamer => {
-        streamer.connect();
+      cards.forEach(card => {
+        if (card.style.display !== 'none') {
+          const id = card.id.replace('card-', '');
+          const streamer = window.skyStreamers[id];
+          if (streamer) streamer.connect();
+        }
       });
 
       setTimeout(() => {
